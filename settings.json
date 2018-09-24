@@ -1,0 +1,10 @@
+{
+    "masterAppId": "abcdefgh",
+    "masterApiKey": "12345678901234567890123456789012",
+    "dbLocation": "./db",
+    "certificate": "./keys/marlin.net/fullchain.cer",
+    "privateKey": "./keys/marlin.net/marlin.net.key",
+    "port": 9002,
+    "https": false
+}
+
