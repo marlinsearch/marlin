@@ -26,6 +26,6 @@ jansson: .make-prerequisites
 .PHONY: jansson
 
 h2o: .make-prerequisites
-	cd h2o && cmake . && make
+	cd h2o && cmake -DDISABLE_LIBUV=1 . && make
 
 .PHONY: h2o
