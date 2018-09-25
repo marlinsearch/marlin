@@ -39,15 +39,16 @@ void load_settings(const char *settings_path) {
     if (json_object_get(js, HTTPS)) {
         marlin->https = json_boolean_value(json_object_get(js, HTTPS));
     }
-    if (json_object_get(js, NUMCORES)) {
-        marlin->num_cores = json_integer_value(json_object_get(js, NUMCORES));
+    if (json_object_get(js, NUMTHREADS)) {
+        marlin->num_threads = json_integer_value(json_object_get(js, NUMTHREADS));
     } else {
-        marlin->num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+        marlin->num_threads = sysconf(_SC_NPROCESSORS_ONLN);
     }
     json_decref(js);
 }
 
 void init_marlin(void) {
+    M_INFO("Initialized %s on port %d", marlin->https?"https":"http", marlin->port);
 }
 
 void shutdown_marlin(void) {

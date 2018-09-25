@@ -11,14 +11,14 @@
 #define APPID_SIZE      8
 #define APIKEY_SIZE     32
 #define SETTINGS_PATH   "./settings.json"
-#define MASTER_APPID    "masterAppId"
-#define MASTER_APIKEY   "masterApiKey"
-#define DB_LOCATION     "dbLocation"
+#define MASTER_APPID    "master_app_id"
+#define MASTER_APIKEY   "master_api_key"
+#define DB_LOCATION     "db_location"
 #define SSL_CERT        "certificate"
-#define SSL_KEY         "privateKey"
+#define SSL_KEY         "private_key"
 #define PORT            "port"
 #define HTTPS           "https"
-#define NUMCORES        "numCores"
+#define NUMTHREADS      "num_threads"
 
 #endif
 
