@@ -55,7 +55,7 @@ struct hthread threads[NUM_THREADS];
 
 static void notify_all_threads(void) {
     unsigned i;
-    for (i = 0; i < marlin->num_cores; i++) {
+    for (i = 0; i < marlin->num_threads; i++) {
         h2o_multithread_message_t *message = h2o_mem_alloc(sizeof(*message));
         *message = (h2o_multithread_message_t){};
         h2o_multithread_send_message(&threads[i].server_notifications, message);
@@ -75,7 +75,7 @@ static void on_sigterm(int signo) {
 static void setup_signal_handlers(void) {
     h2o_set_signal_handler(SIGTERM, on_sigterm);
     // TODO: Enable on release build.
-    // h2o_set_signal_handler(SIGINT, on_sigterm);
+    h2o_set_signal_handler(SIGINT, on_sigterm);
 #ifdef VALGRIND_TEST
     h2o_set_signal_handler(SIGINT, on_sigterm);
 #endif
@@ -135,7 +135,7 @@ static void on_socketclose(void *data) {
 
 static void on_accept(h2o_socket_t *listener, const char *err) {
     struct listener_ctx_t *ctx = listener->data;
-    size_t num_accepts = MAX_CONNECTIONS / 16 / marlin->num_cores;
+    size_t num_accepts = MAX_CONNECTIONS / 16 / marlin->num_threads;
     if (num_accepts < 8)
         num_accepts = 8;
 
@@ -240,7 +240,7 @@ void *run_loop(void *_thread_index) {
 #endif
 
     // should never happen, but gcc on Ubuntu 14.04-LTS warns about this when run with -Ofast, so this makes it happy (& on the off chance it finds a way to execute this, we'll rather abort as things are bonkers)
-    if (thread_index > marlin->num_cores)
+    if (thread_index > marlin->num_threads)
         abort();
 
     h2o_context_init(&threads[thread_index].ctx, h2o_evloop_create(), &config);
@@ -386,8 +386,8 @@ void init_api(void) {
           goto Error;
       }
 
-      startup_sync_barrier = H2O_BARRIER_INIT(marlin->num_cores);
-      for (int i = 1; i < marlin->num_cores; i++) {
+      h2o_barrier_init(&startup_sync_barrier, marlin->num_threads);
+      for (int i = 1; i < marlin->num_threads; i++) {
           pthread_t tid;
           h2o_multithread_create_thread(&tid, NULL, run_loop, (void *)i);
       }

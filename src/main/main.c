@@ -30,6 +30,7 @@ int main(int argc, char **argv) {
     // This should start the api threads
     init_api();
 
+    // Wait till initialization of threads is done
     sleep(1);
 
     init_marlin();

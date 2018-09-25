@@ -1,7 +1,8 @@
 include_directories(${CMAKE_SOURCE_DIR}/inc)
 include_directories(${CMAKE_SOURCE_DIR}/../deps)
+include_directories(${CMAKE_SOURCE_DIR}/../deps/h2o/include)
 
-#link_directories(${CMAKE_SOURCE_DIR}/../deps/h2o)
+link_directories(${CMAKE_SOURCE_DIR}/../deps/h2o)
 
 add_executable (marlin main.c marlin.c api.c)
 

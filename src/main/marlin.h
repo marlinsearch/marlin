@@ -9,7 +9,7 @@ struct marlin {
     char db_path[PATH_MAX];
     char ssl_cert[PATH_MAX];
     char ssl_key[PATH_MAX];
-    int  num_cores;
+    int  num_threads;
     int  port;
     bool https;
 };
