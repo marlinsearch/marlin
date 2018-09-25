@@ -20,5 +20,9 @@
 #define HTTPS           "https"
 #define NUMTHREADS      "num_threads"
 
+// Json responses
+#define J_SUCCESS   "{\"success\":true}"
+#define J_FAILURE   "{\"success\":false}"
+
 #endif
 

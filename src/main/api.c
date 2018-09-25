@@ -17,10 +17,6 @@
 #include "marlin.h"
 #include "mlog.h"
 
-#pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#pragma GCC diagnostic ignored "-Wformat-truncation="
-
 #define NUM_THREADS     24
 #define NUM_LISTENERS   1
 #define MAX_CONNECTIONS 8192
@@ -38,6 +34,8 @@ static h2o_compress_args_t compress;
 static int g_fd = 0;
 static SSL_CTX *ssl_ctx = NULL;
 static pthread_mutex_t *mutexes;
+
+static khash_t(URL_CBDATA) *urlmap = NULL;
 
 struct hthread {
     pthread_t tid;
@@ -108,6 +106,183 @@ static int hello_world(h2o_handler_t *self, h2o_req_t *req) {
 
     return 0;
 }
+
+static void api_send_response(h2o_req_t *req, char *resp) {
+    if (!resp) return;
+    static h2o_generator_t generator = {NULL, NULL};
+    h2o_iovec_t body = h2o_strdup(&req->pool, resp, SIZE_MAX);
+    h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_CONTENT_TYPE, NULL, H2O_STRLIT("application/json"));
+    h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_ACCESS_CONTROL_ALLOW_ORIGIN, NULL, H2O_STRLIT("*"));
+    h2o_start_response(req, &generator);
+    h2o_send(req, &body, 1, 1);
+    free(resp);
+}
+
+// sends back a bad request response
+static int bad_request(h2o_req_t *req) {
+    req->res.status = 400;
+    req->res.reason = "Bad Request";
+    api_send_response(req, strdup(J_FAILURE));
+    return 0;
+}
+
+static int api_handle_cb(h2o_req_t *req, struct url_cbdata *cbdata) {
+    // Assumes all requests succeed, if not, it is the callbacks responsiblity
+    // to update the status and reason code
+    req->res.status = 200;
+    req->res.reason = "OK";
+    char *resp = cbdata->cb(req, cbdata->data);
+    api_send_response(req, resp);
+    return 0;
+}
+
+static char * strnstr(const char *s, const char *find, size_t slen) {
+    char c, sc;
+    size_t len;
+    if ((c = *find++) != '\0') {
+        len = strlen(find);
+        do {
+            do {
+                if ((sc = *s++) == '\0' || slen-- < 1)
+                    return (NULL);
+            } while (sc != c);
+            if (len > slen)
+                return (NULL);
+        } while (strncmp(s, find, len) != 0);
+        s--;
+    }
+    return ((char *)s);
+}
+
+
+// String hashed is appid-apikey-method-url --> callback data
+static int api_handler(h2o_handler_t *self, h2o_req_t *req, int (*cb_handler)(h2o_req_t *, struct url_cbdata *)) {
+    // Parse headers and get appid / apikey
+    char appid[APPID_SIZE+1];
+    char apikey[APIKEY_SIZE+1];
+    appid[0] = '\0';
+    apikey[0] = '\0';
+    M_DBG("Path %s", req->path.base);
+
+    // See if apikey and id is part of the query parameters
+    if (req->query_at != SIZE_MAX) {
+        char *query = &req->path.base[req->query_at+1];
+        char *qapikey = strnstr(query, M_API_KEY, req->path.len-req->query_at+1);
+        char *qappid = strnstr(query, M_APP_ID, req->path.len-req->query_at+1);
+        char *pathend = req->path.base;
+        pathend += req->path.len;
+        if (qapikey) {
+            //printf("base %p %p\n", req->path.base, qapikey);
+            qapikey += (M_API_KEY_LEN+1);
+            //printf("qapi val %u\n", (pathend - qapikey));
+            char *end = memchr(qapikey, '&', (pathend - qapikey));
+            if (!end || ((end - qapikey) > APIKEY_SIZE)) {
+                end = pathend;
+            }
+            int len = end - qapikey;
+            if (len == APIKEY_SIZE) {
+                memcpy(apikey, qapikey, APIKEY_SIZE);
+                apikey[APIKEY_SIZE] = '\0';
+            }
+        }
+        if (qappid) {
+            qappid += (M_APP_ID_LEN+1);
+            char *end = memchr(qappid, '&', (pathend - qappid));
+            if (!end || ((end - qappid) > APPID_SIZE)) {
+                end = pathend;
+            }
+            int len = end - qappid;
+            if (len == APPID_SIZE) {
+                memcpy(appid, qappid, APPID_SIZE);
+                appid[APPID_SIZE] = '\0';
+            }
+        }
+    }
+
+    // It was not part of the query, let us look at the headers
+    if (appid[0] == '\0' || apikey[0] == '\0') {
+        for (int i=0; i<req->headers.size; i++) {
+            if (strncmp(M_APP_ID, req->headers.entries[i].name->base, M_APP_ID_LEN) == 0) {
+                M_DBG("app id value len %u", req->headers.entries[i].value.len);
+                if (req->headers.entries[i].value.len == APPID_SIZE) {
+                    memcpy(appid, req->headers.entries[i].value.base, req->headers.entries[i].value.len);
+                    appid[APPID_SIZE] = '\0';
+                } else return bad_request(req);
+                M_DBG("APPID %s %d\n", appid, strlen(appid));
+            } else if (strncmp(M_API_KEY, req->headers.entries[i].name->base, M_API_KEY_LEN) == 0) {
+                M_DBG("api key value len %u", req->headers.entries[i].value.len);
+                if (req->headers.entries[i].value.len == APIKEY_SIZE) {
+                    memcpy(apikey, req->headers.entries[i].value.base, req->headers.entries[i].value.len);
+                    apikey[APIKEY_SIZE] = '\0';
+                } else return bad_request(req);
+                M_DBG("APIKEY %s\n", apikey);
+            }
+        }
+    }
+    // Validate that data is as expected
+    if (UNLIKELY(appid[0] == '\0' || apikey[0] == '\0')) {
+        M_DBG("APIKEY %s\n", apikey);
+        M_DBG("APPID %s\n", appid);
+        return bad_request(req);
+    }
+    if (UNLIKELY(req->method.len > 6)) return bad_request(req);
+    int path_len = req->query_at < req->path.len ? req->query_at: req->path.len;
+    if (UNLIKELY(path_len > 512)) return bad_request(req);
+
+    // Form the hash url
+    char hashurl[1024];
+    // Safe sprintf as we validated lengths before hand
+    sprintf(hashurl, "%s-%s-", appid, apikey);
+    memcpy(&hashurl[APIKEY_SIZE+APPID_SIZE+2], req->method.base, req->method.len);
+    hashurl[APIKEY_SIZE+APPID_SIZE+2+req->method.len] = '-';
+    memcpy(&hashurl[APIKEY_SIZE+APPID_SIZE+3+req->method.len], &req->path.base[3], path_len-3);
+    hashurl[APIKEY_SIZE+APPID_SIZE+req->method.len+path_len] = '\0';
+    M_DBG("URL hash is %s %d %d", hashurl, strlen(hashurl), APIKEY_SIZE+APPID_SIZE+3+req->method.len+path_len);
+
+    RDLOCK(&url_lock);
+    // Invoke callback if found 
+    khiter_t k = kh_get(URL_CBDATA, urlmap, hashurl);
+    if (k != kh_end(urlmap)) {
+        struct url_cbdata *cbdata = kh_value(urlmap, k);
+        UNLOCK(&url_lock);
+        int ret = cb_handler(req, cbdata);
+        return ret;
+   } else {
+        int start = APIKEY_SIZE+APPID_SIZE+req->method.len+path_len-1;
+        // Till we reach /1/
+        // Let us try to find out a /* url for objects / keys etc.,
+        while (start > 3) {
+            start--;
+            if (hashurl[start] == '/') {
+                hashurl[start+1] = '*';
+                hashurl[start+2] = '\0';
+                break;
+            }
+        } 
+        k = kh_get(URL_CBDATA, urlmap, hashurl);
+        if (k != kh_end(urlmap)) {
+            struct url_cbdata *cbdata = kh_value(urlmap, k);
+            UNLOCK(&url_lock);
+            int ret = cb_handler(req, cbdata);
+            return ret;
+        }
+    }
+    UNLOCK(&url_lock);
+
+    req->res.status = 403;
+    req->res.reason = "Forbidden";
+    api_send_response(req, strdup(J_FAILURE));
+    M_ERR("Forbidden !");
+    return 0;
+}
+
+
+static int api_v1(h2o_handler_t *self, h2o_req_t *req) {
+    // TODO: Process and parse analytics related info here
+    int ret = api_handler(self, req, api_handle_cb);
+    return ret;
+}
+
 
 static void on_server_notification(h2o_multithread_receiver_t *receiver, h2o_linklist_t *messages) {
     /* the notification is used only for exitting h2o_evloop_run; actual changes are done in the main loop of run_loop */
@@ -380,6 +555,7 @@ void init_api(void) {
       pthread_rwlock_init(&url_lock, &rwlockattr);
 
       register_handler(hostconf, "/hello-world", hello_world);
+      register_handler(hostconf, "/1", api_v1);
 
       if (create_listener() != 0) {
           M_ERR("failed to listen to 127.0.0.1:9002: %s", strerror(errno));
@@ -387,10 +563,70 @@ void init_api(void) {
       }
 
       h2o_barrier_init(&startup_sync_barrier, marlin->num_threads);
-      for (int i = 1; i < marlin->num_threads; i++) {
+      for (size_t i = 1; i < marlin->num_threads; i++) {
           pthread_t tid;
           h2o_multithread_create_thread(&tid, NULL, run_loop, (void *)i);
       }
 Error:
       return;
 }
+
+/**
+ * Silly but simple way of handling permissions. We take the appid / apikey / method & url
+ * and lookup a hashtable to find the handler to invoke.  When keys are added or removed
+ * the necessary handlers are registered based on permissions.
+ *
+ * Potentially huge table if we have 1000s of keys.. but for a few keys, this is fast
+ */
+
+char *api_forbidden(h2o_req_t *req, void *data) {
+    req->res.status = 403;
+    req->res.reason = "Forbidden";
+    return strdup(J_FAILURE);
+}
+
+// String hashed is appid-apikey-method-url --> callback data
+void register_api_callback(const char *appid, const char *apikey, 
+                           const char *method, const char *url, struct url_cbdata *cbdata) {
+    char hashurl[1024];
+    snprintf(hashurl, sizeof(hashurl), "%s-%s-%s-%s", appid, apikey, method, url);
+    M_DBG("Register callback %s", hashurl);
+    khiter_t k;
+    int ret;
+    // Deregister existing callback if any, before registering
+    deregister_api_callback(appid, apikey, method, url);
+    WRLOCK(&url_lock);
+    k = kh_put(URL_CBDATA, urlmap, strdup(hashurl), &ret);
+    // Free existing cbdata if present
+    if (ret == 0) {
+        struct url_cbdata *oldcbdata = kh_value(urlmap, k);
+        free(oldcbdata);
+    }
+    kh_value(urlmap, k) = cbdata;
+    UNLOCK(&url_lock);
+}
+
+void deregister_api_callback(const char *appid, const char *apikey, const char *method, 
+        const char *url) {
+    char hashurl[1024];
+    snprintf(hashurl, sizeof(hashurl), "%s-%s-%s-%s", appid, apikey, method, url);
+    M_DBG("De-Register callback %s", hashurl);
+    WRLOCK(&url_lock);
+    khiter_t k = kh_get(URL_CBDATA, urlmap, hashurl);
+    if (k != kh_end(urlmap)) {
+        struct url_cbdata *cbdata = kh_value(urlmap, k);
+        const char *key = kh_key(urlmap, k);
+        free(cbdata);
+        free((void *)key);
+        kh_del(URL_CBDATA, urlmap, k);
+    }
+    UNLOCK(&url_lock);
+}
+
+struct url_cbdata *url_cbdata_new(char *(*cb)(h2o_req_t *, void *), void *data) {
+    struct url_cbdata *cbdata = malloc(sizeof(struct url_cbdata));
+    cbdata->cb = cb;
+    cbdata->data = data;
+    return cbdata;
+}
+
