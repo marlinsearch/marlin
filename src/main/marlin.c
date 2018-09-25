@@ -1,7 +1,13 @@
 #include <jansson.h>
+#include <assert.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include "marlin.h"
+#include "url.h"
+#include "api.h"
 
 struct marlin *marlin;
 
@@ -47,11 +53,34 @@ void load_settings(const char *settings_path) {
     json_decref(js);
 }
 
+static char *marlin_handler(h2o_req_t *req, void *data) {
+    // TODO: add and use version from version.h
+    return strdup("{\"success\":true, \"version\":\"0.1\"}");
+}
+
 void init_marlin(void) {
+    // Make sure setting have been loaded before initializing
+    assert(marlin != NULL);
+
+    // Create the db path if not present
+    mkdir(marlin->db_path, 0644);
+
+    // Setup API handlers
+    register_api_callback(marlin->appid, marlin->apikey, "GET",
+                          URL_MARLIN, url_cbdata_new(marlin_handler, NULL));
+    /*
+    register_api_callback(diya->appid, diya->apikey, "GET", 
+                          URL_INT_CUSTOMER, url_cbdata_new(list_customers_handler, NULL));
+    register_api_callback(diya->appid, diya->apikey, "POST", 
+                          URL_INT_CUSTOMER, url_cbdata_new(create_customer_handler, NULL));
+                          */
+
     M_INFO("Initialized %s on port %d", marlin->https?"https":"http", marlin->port);
 }
 
 void shutdown_marlin(void) {
     M_INFO("Shutting down !");
+    // Deregister callbacks
+    deregister_api_callback(marlin->appid, marlin->apikey, "GET", URL_MARLIN);
 }
 
