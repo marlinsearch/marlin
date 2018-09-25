@@ -548,6 +548,9 @@ void init_api(void) {
 
       hostconf = h2o_config_register_host(&config, h2o_iovec_init(H2O_STRLIT("default")), 65535);
 
+      // urlmap is the hashtable which holds all api end points and respective callbacks
+      urlmap = kh_init(URL_CBDATA);
+
       pthread_rwlockattr_init(&rwlockattr);
 #ifdef __linux__
       pthread_rwlockattr_setkind_np(&rwlockattr, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
