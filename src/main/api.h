@@ -25,6 +25,7 @@ void register_api_callback(const char *appid, const char *apikey, const char *me
 void deregister_api_callback(const char *appid, const char *apikey, const char *method, 
         const char *url);
 char *api_forbidden(h2o_req_t *req, void *data);
+char *api_bad_request(h2o_req_t *req);
 
 #endif
 

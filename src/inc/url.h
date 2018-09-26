@@ -3,7 +3,9 @@
 
 /* Definitions of all api URL paths used by Marlin */
 
-#define URL_MARLIN  "marlin"
-#define URL_APPS    "applications"
+#define URL_MARLIN      "marlin"
+#define URL_APPS        "applications"
+#define URL_INDEXES     "indexes"      // Should have been indices, may be confusing
+#define URL_SETTINGS    "settings"
 
 #endif

@@ -35,3 +35,11 @@ void random_str(char *s, const int len) {
     }
     s[len] = 0;
 }
+
+/* Returns seconds from epoch */
+uint64_t get_utc_seconds(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec;
+}
+

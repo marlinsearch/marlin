@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <sys/types.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include "platform.h"
 #include "mlog.h"
@@ -10,6 +11,7 @@
 // File names
 #define SETTINGS_PATH   "./settings.json"
 #define APPS_FILE       "apps.json"
+#define INDEXES_FILE    "indexes.json"
 
 // Settings
 #define APPID_SIZE      8
@@ -31,6 +33,8 @@
 #define J_NAME      "name"
 #define J_APIKEY    "api_key"
 #define J_APPID     "app_id"
+#define J_CREATED   "created"
+#define J_UPDATED   "updated"
 
 #endif
 

@@ -73,7 +73,7 @@ static void on_sigterm(int signo) {
 static void setup_signal_handlers(void) {
     h2o_set_signal_handler(SIGTERM, on_sigterm);
     // TODO: Enable on release build.
-    h2o_set_signal_handler(SIGINT, on_sigterm);
+    //h2o_set_signal_handler(SIGINT, on_sigterm);
 #ifdef VALGRIND_TEST
     h2o_set_signal_handler(SIGINT, on_sigterm);
 #endif
@@ -471,8 +471,10 @@ void *run_loop(void *_thread_index) {
 
     //printf("Shutdown thread %u\n", thread_index);
 
-    if (thread_index == 0)
+    if (thread_index == 0) {
         M_ERR("received SIGTERM, gracefully shutting down\n");
+        notify_all_threads();
+    }
 
     /* shutdown requested, unregister, close the listeners and notify the protocol handlers */
     for (i = 0; i != NUM_LISTENERS; ++i)
@@ -585,6 +587,12 @@ Error:
 char *api_forbidden(h2o_req_t *req, void *data) {
     req->res.status = 403;
     req->res.reason = "Forbidden";
+    return strdup(J_FAILURE);
+}
+
+char *api_bad_request(h2o_req_t *req) {
+    req->res.status = 400;
+    req->res.reason = "Bad Request";
     return strdup(J_FAILURE);
 }
 

@@ -17,7 +17,7 @@ debug: ./build/Makefile-debug
 
 ./build/Makefile-debug:
 	@  ($(MKDIR) build-debug > /dev/null)
-	@  (cd build-debug > /dev/null 2>&1 && cmake -DCMAKE_BUILD_TYPE=Debug ../src)
+	@  (cd build-debug > /dev/null 2>&1 && cmake -DCMAKE_BUILD_TYPE=Debug -DDEBUG=true ../src)
 
 clean:
 	@- $(RM) -rf ./build
