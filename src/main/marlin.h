@@ -2,6 +2,8 @@
 #define _MARLIN_H
 #include "common.h"
 #include "platform.h"
+#include "kvec.h"
+#include "app.h"
 
 struct marlin {
     char appid[APPID_SIZE+1];
@@ -12,6 +14,7 @@ struct marlin {
     int  num_threads;
     int  port;
     bool https;
+    kvec_t(struct app *) apps;
 };
 
 extern struct marlin *marlin;

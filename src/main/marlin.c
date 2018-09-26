@@ -6,10 +6,14 @@
 #include <sys/types.h>
 
 #include "marlin.h"
+#include "utils.h"
 #include "url.h"
 #include "api.h"
 
+#pragma GCC diagnostic ignored "-Wformat-truncation="
+
 struct marlin *marlin;
+
 
 // Load marlin settings
 void load_settings(const char *settings_path) {
@@ -58,22 +62,164 @@ static char *marlin_handler(h2o_req_t *req, void *data) {
     return strdup("{\"success\":true, \"version\":\"0.1\"}");
 }
 
+static char *app_list_to_json(void) {
+    json_t *ja = json_array();
+    for (int i=0; i<kv_size(marlin->apps); i++) {
+        struct app *a = kv_A(marlin->apps, i);
+        json_t *jo = json_object();
+        json_object_set_new(jo, J_NAME, json_string(a->name));
+        json_object_set_new(jo, J_APPID, json_string(a->appid));
+        json_object_set_new(jo, J_APIKEY, json_string(a->apikey));
+        json_array_append_new(ja, jo);
+    }
+    char *resp = json_dumps(ja, JSON_PRESERVE_ORDER|JSON_INDENT(4));
+    json_decref(ja);
+    return resp;
+}
+
+/* Creates / updates the app list file */
+static void save_apps(void) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s", marlin->db_path, APPS_FILE);
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        M_ERR("Failed to save app info");
+        return;
+    }
+    char *app_str = app_list_to_json();
+    fprintf(f, "%s", app_str);
+    free(app_str);
+    fclose(f);
+}
+
+/* API handler to delete an application */
+static char *delete_app_handler(h2o_req_t *req, void *data) {
+    struct app *a = (struct app *)data;
+    for (int i=0; i < kv_size(marlin->apps); i++) {
+        if (kv_A(marlin->apps, i) == data) {
+            kv_del(struct app *, marlin->apps, i);
+            // De-register callback
+            char urldel[PATH_MAX];
+            sprintf(urldel, "%s/%s", URL_APPS, a->name);
+            // remove the handler for deletion
+            deregister_api_callback(marlin->appid, marlin->apikey, "DELETE", urldel);
+            // Free app
+            app_free(a);
+            break;
+        }
+    }
+    save_apps();
+    // TODO: Return app information and when it was deleted
+    return strdup(J_SUCCESS);
+}
+
+static int create_app_from_json(struct json_t *j) {
+    const char *name = json_string_value(json_object_get(j, J_NAME));
+    const char *appid = json_string_value(json_object_get(j, J_APPID));
+    const char *apikey = json_string_value(json_object_get(j, J_APIKEY));
+
+    if (!(name && appid && apikey)) return -1;
+    if (strlen(appid) != APPID_SIZE) return -1;
+    if (strlen(apikey) != APIKEY_SIZE) return -1;
+    M_DBG("Creating application %s %s %s", name, appid, apikey);
+
+    // Make sure app does not exist already
+    for (int i = 0; i < kv_size(marlin->apps); i++) {
+        struct app *a = kv_A(marlin->apps, i);
+        if (strcmp(a->name, name) == 0) return -1;
+        if (strcmp(a->appid, appid) == 0) return -1;
+    }
+
+    // Create / load the application and add it to our list of apps
+    struct app *a = app_new(name, appid, apikey);
+    kv_push(struct app *, marlin->apps, a);
+
+    // Register URL to delete application
+    char urldel[PATH_MAX];
+    sprintf(urldel, "%s/%s", URL_APPS, a->name);
+    // Setup delete handler, only master can delete this
+    register_api_callback(marlin->appid, marlin->apikey, "DELETE", 
+            urldel, url_cbdata_new(delete_app_handler, a));
+    return 0;
+}
+
+
+/**
+ * Loads applications from the applications.json file in db
+ * Creates a default application if nothing exists */
+static void load_apps(void) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s", marlin->db_path, APPS_FILE);
+    json_t *json;
+    json_error_t error;
+    json = json_load_file(path, 0, &error);
+    if (json && json_is_array(json)) {
+        size_t objid;
+        json_t *obj;
+        json_array_foreach(json, objid, obj) {
+            create_app_from_json(obj);
+        }
+        json_decref(json);
+    }
+}
+
+static char *list_apps_handler(h2o_req_t *req, void *data) {
+    return app_list_to_json();
+}
+
+static char *create_app_handler(h2o_req_t *req, void *data) {
+    json_error_t error;
+    json_t *j = json_loadb(req->entity.base, req->entity.len, 0, &error);
+
+    //If an appid and apikey were part of the request, use that else generate
+    if (!json_object_get(j, J_APPID)) {
+        char appid[APPID_SIZE];
+        random_str(appid, APPID_SIZE);
+        json_object_set_new(j, J_APPID, json_string(appid));
+    }
+
+    if (!json_object_get(j, J_APIKEY)) {
+        char apikey[APIKEY_SIZE];
+        random_str(apikey, APIKEY_SIZE);
+        json_object_set_new(j, J_APIKEY, json_string(apikey));
+    }
+
+    M_INFO("create app %s %s", req->entity.base, error.text);
+    M_INFO("create app %s", json_dumps(j, 0));
+    if (j) {
+        int r = create_app_from_json(j);
+        if (r < 0) goto jerror;
+        save_apps();
+        char *resp = json_dumps(j, JSON_PRESERVE_ORDER|JSON_INDENT(4));
+        json_decref(j);
+        return resp;
+    }
+jerror:
+    // TODO: Better error message
+    json_decref(j);
+    req->res.status = 400;
+    req->res.reason = "Bad Request";
+    return strdup(J_FAILURE);
+}
+
 void init_marlin(void) {
     // Make sure setting have been loaded before initializing
     assert(marlin != NULL);
 
     // Create the db path if not present
-    mkdir(marlin->db_path, 0644);
+    mkdir(marlin->db_path, 0775);
+
+    // Setup applications, creating a default one if required
+    kv_init(marlin->apps);
+    load_apps();
 
     // Setup API handlers
     register_api_callback(marlin->appid, marlin->apikey, "GET",
                           URL_MARLIN, url_cbdata_new(marlin_handler, NULL));
-    /*
-    register_api_callback(diya->appid, diya->apikey, "GET", 
-                          URL_INT_CUSTOMER, url_cbdata_new(list_customers_handler, NULL));
-    register_api_callback(diya->appid, diya->apikey, "POST", 
-                          URL_INT_CUSTOMER, url_cbdata_new(create_customer_handler, NULL));
-                          */
+    register_api_callback(marlin->appid, marlin->apikey, "GET", 
+                          URL_APPS, url_cbdata_new(list_apps_handler, NULL));
+    register_api_callback(marlin->appid, marlin->apikey, "POST", 
+                          URL_APPS, url_cbdata_new(create_app_handler, NULL));
 
     M_INFO("Initialized %s on port %d", marlin->https?"https":"http", marlin->port);
 }
@@ -82,5 +228,7 @@ void shutdown_marlin(void) {
     M_INFO("Shutting down !");
     // Deregister callbacks
     deregister_api_callback(marlin->appid, marlin->apikey, "GET", URL_MARLIN);
+    deregister_api_callback(marlin->appid, marlin->apikey, "GET", URL_APPS);
+    deregister_api_callback(marlin->appid, marlin->apikey, "POST", URL_APPS);
 }
 
