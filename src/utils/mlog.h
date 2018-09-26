@@ -27,7 +27,7 @@ extern int global_log_level;
     char buff[20]; \
     time_t now = time(NULL); \
     strftime(buff, 20, "%m-%d-%Y %H:%M:%S", localtime(&now)); \
-    mlog_func("[%s] "fmt" @%s():%d\n", buff, ##arg, __FUNCTION__, __LINE__);} \
+    mlog_func("[%s] "fmt"\n", buff, ##arg);} \
 } while(0)
 
 #define M_ERR(fmt, arg...)  do { if (global_log_level < 3) {\

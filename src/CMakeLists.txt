@@ -5,7 +5,7 @@ endif()
 cmake_minimum_required(VERSION 2.7)                                                                       
 project (MARLIN)
 
-SET(CMAKE_C_FLAGS_DEBUG "-std=gnu99 -Wall -g -O0 -march=native -DH20_USE_EPOLL -DH2O_USE_LIBUV=0 -D_GNU_SOURCE -pthread")
+SET(CMAKE_C_FLAGS_DEBUG "-std=gnu99 -Wall -g -O0 -march=native -DH20_USE_EPOLL -DH2O_USE_LIBUV=0 -D_GNU_SOURCE -DDEBUG_BUILD -pthread")
 
 SET(CMAKE_C_FLAGS_RELEASE "-std=gnu99 -pthread -Wall -g -Ofast -march=native -DH20_USE_EPOLL -DH2O_USE_LIBUV=0 -D_GNU_SOURCE")
 
