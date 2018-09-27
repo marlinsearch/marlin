@@ -8,6 +8,8 @@
 #define M_API_KEY "x-marlin-rest-api-key"
 #define M_API_KEY_LEN 21
 
+extern h2o_context_t *g_h2o_ctx;
+
 struct url_cbdata {
     char *(*cb)(h2o_req_t *req, void *);
     void *data;
