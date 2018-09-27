@@ -55,6 +55,7 @@ static struct index *create_index_from_json(struct app *a, struct json_t *j) {
     const char *name = json_string_value(json_object_get(j, J_NAME));
 
     // Make sure name exists and it is valid
+    // TODO: validate name.. no spaces weird chars etc..,
     if (!name) return NULL;
     if (strlen(name) > MAX_INDEX_NAME) return NULL;
 
@@ -64,8 +65,15 @@ static struct index *create_index_from_json(struct app *a, struct json_t *j) {
         if (strcmp(in->name, name) == 0) return NULL;
     }
 
+    // It does not matter what the value is for existing indices as the value
+    // is stored in the index json file
+    int num_shards = json_number_value(json_object_get(j, J_NUM_SHARDS));
+    if (!num_shards) {
+        num_shards = DEFAULT_NUM_SHARDS;
+    }
+
     // We are good to go, create index now
-    struct index *in = index_new(name, a);
+    struct index *in = index_new(name, a, num_shards);
     uint64_t created = json_number_value(json_object_get(j, J_CREATED));
     if (!created) created = get_utc_seconds();
     in->time_created = created;

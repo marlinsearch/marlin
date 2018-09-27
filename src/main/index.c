@@ -5,8 +5,9 @@
 #include "url.h"
 #include "api.h"
 #include "platform.h"
+#include "marlin.h"
 
-// ALL API HANDLERS COME BELOW THIS
+#pragma GCC diagnostic ignored "-Wformat-truncation="
 
 struct api_path {
     const char *method;
@@ -15,11 +16,51 @@ struct api_path {
     char *(*api_cb)(h2o_req_t *req, void *data);
 };
 
+/* This is where new objects are added to the index.
+ * First we generate a objid for every object.  use the objid
+ * to determine which shard it belongs to and send it over */
+static void index_add_objects(struct index *in, json_t *j) {
+    if (json_is_array(j)) {
+        size_t index;
+        json_t *jo;
+        // First create shard specific array of objects
+        json_t **sh_j = malloc(sizeof(json_t *) * in->num_shards);
+        for (int i = 0; i < in->num_shards; i++) {
+            sh_j[i] = json_array();
+        }
+
+        // set the object id for every object and hash the object id
+        // to arrive at the shard the object belongs.  Add it to the
+        // shard array
+        json_array_foreach(j, index, jo) {
+            char *id = generate_objid(in->fctx);
+            json_object_set_new(jo, J_ID, json_string(id));
+            int sid = get_shard_routing_id(id, in->num_shards);
+            json_array_append(sh_j[sid], jo);
+            free(id);
+        }
+
+        // Finally add objects to the shards
+        for (int i=0; i < in->num_shards; i++) {
+            // send to shard
+            shard_add_objects(kv_A(in->shards, i), sh_j[i]);
+            printf("Shard %d len %lu\n", i, json_array_size(sh_j[i]));
+            json_decref(sh_j[i]);
+        }
+        free(sh_j);
+    }
+}
+
+/* This is where any modifications to the index happen.  It happens one at a time
+ * no two index jobs can ever run simultaneously and is controlled by the threadpool */
 static void index_work_job(void *data) {
     struct in_job *job = data;
     struct index *in = job->index;
     if (in) {
         switch (job->type) {
+            case JOB_ADD:
+                index_add_objects(in, job->j);
+                break;
             default:
                 break;
         }
@@ -59,6 +100,47 @@ static struct in_job *in_job_new(struct index *in, JOB_TYPE type) {
     job->index = in;
     job->type = type;
     return job;
+}
+
+static void index_save_info(struct index *in) {
+    json_t *j = json_object();
+    json_object_set_new(j, J_NUM_SHARDS, json_integer(in->num_shards));
+    json_object_set_new(j, J_CREATED, json_integer(in->time_created));
+    json_object_set_new(j, J_UPDATED, json_integer(in->time_updated));
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, in->app->name, 
+                                 in->name, INDEX_FILE);
+ 
+    FILE *fp = fopen(path, "w");
+    if (fp) {
+        char *jstr = json_dumps(j, JSON_PRESERVE_ORDER|JSON_INDENT(4));
+        fprintf(fp, "%s", jstr);
+        free(jstr);
+        fclose(fp);
+    } else {
+        M_ERR("Failed to store index info for %s/%s", in->app->name, in->name);
+    }
+}
+
+/* This tries to load index information regarding shards and creation / update times
+ * If none exists, dumps the current information in a index into the file.  The latter
+ * happens when this is a newly created index */
+static void index_update_info(struct index *in) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, in->app->name, 
+                                 in->name, INDEX_FILE);
+    json_t *json;
+    json_error_t error;
+    json = json_load_file(path, 0, &error);
+    if (json && json_is_object(json)) {
+        in->num_shards = json_number_value(json_object_get(json, J_NUM_SHARDS));
+        in->time_created = json_number_value(json_object_get(json, J_CREATED));
+        in->time_updated = json_number_value(json_object_get(json, J_UPDATED));
+        json_decref(json);
+        return;
+    } else {
+        index_save_info(in);
+    }
 }
 
 /* Object / Objects are being added to the index.  The request can either
@@ -169,7 +251,7 @@ void index_delete_key(struct index *in, struct key *k) {
 
 /* Handles registering all handlers for this index, this is only to be used for app keys */
 // NOTE: index_apply_key, index_delete_key, index_register_handlers all 3 need to be updated
-static void index_register_handlers(struct index *in, const char *appid, const char *apikey) {
+static void setup_index_handlers(struct index *in, const char *appid, const char *apikey, bool reg) {
     char path[PATH_MAX];
     int idx = 0;
     while(1) {
@@ -180,18 +262,51 @@ static void index_register_handlers(struct index *in, const char *appid, const c
         } else {
             sprintf(path, "%s/%s", URL_INDEXES, in->name);
         }
-        register_api_callback(appid, apikey, ap->method, path, url_cbdata_new(ap->api_cb, in));
+        if (reg) {
+            register_api_callback(appid, apikey, ap->method, path, url_cbdata_new(ap->api_cb, in));
+        } else {
+            deregister_api_callback(appid, apikey, ap->method, path);
+        }
         idx++;
     }
 }
 
+
 /* Creates a new index or loads existing index */
-struct index *index_new(const char *name, struct app *a) {
+struct index *index_new(const char *name, struct app *a, int num_shards) {
     struct index *in = calloc(1, sizeof(struct index));
     snprintf(in->name, sizeof(in->name), "%s", name);
     in->app = a;
+    in->num_shards = num_shards;
     in->time_created = get_utc_seconds();
-    index_register_handlers(in, a->appid, a->apikey);
+    in->fctx = flakeid_ctx_create_with_spoof(NULL);
+    kv_init(in->shards);
+
+
+    // Create index path if not present
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s/%s", marlin->db_path, a->name, in->name);
+    mkdir(path, 0775);
+    // Update stored index information if any
+    index_update_info(in);
+
+    // NOTE : Only after updating information do we have the correct number of shards
+    // TODO: Properly handle shards when more than 1 node is present and all shards
+    // of an index may not be on the same node
+    // For now it is just shards by id.. so load it
+    for (int i = 0; i < in->num_shards; i++) {
+        struct shard *s = shard_new(in, i);
+        kv_push(struct shard*, in->shards, s);
+    }
+
+    // Register the handlers for the app
+    setup_index_handlers(in, a->appid, a->apikey, true);
 
     return in;
 }
+
+void index_free(struct index *in) {
+    setup_index_handlers(in, in->app->appid, in->app->apikey, false);
+    flakeid_ctx_destroy(in->fctx);
+}
+
