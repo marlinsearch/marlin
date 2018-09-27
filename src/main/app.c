@@ -11,6 +11,23 @@
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 
+/* NOTE: This gets called every 5 seconds */
+static void app_timer_callback(h2o_timeout_entry_t *entry) {
+    M_DBG("App timeout!");
+    struct app_timeout *at = (struct app_timeout *)entry;
+    struct app *a = at->app;
+    // restart the timer
+    h2o_timeout_link(g_h2o_ctx->loop, &a->timeout, &a->timeout_entry.te);
+}
+
+/* sets up a periodic timer which fires every 5 seconds */
+static void app_setup_timeouts(struct app *a) {
+    h2o_timeout_init(g_h2o_ctx->loop, &a->timeout, APP_TIMER_SECS*1000);
+    a->timeout_entry.te.cb = app_timer_callback;
+    a->timeout_entry.app = a;
+    h2o_timeout_link(g_h2o_ctx->loop, &a->timeout, &a->timeout_entry.te);
+}
+
 /* Converts the list of indexes to json format, both for api usage and for saving index info*/
 static char *index_list_to_json(struct app *a) {
     json_t *ja = json_array();
@@ -88,7 +105,8 @@ jerror:
     return api_bad_request(req);
 }
 
-
+/* Loads the indexes file and loads each index one by one
+ * Just ignores what it cannot load for now */
 static void app_load_indexes(struct app *c) {
     char path[PATH_MAX];
     snprintf(path, sizeof(path), "%s/%s/%s", marlin->db_path, c->name, INDEXES_FILE);
@@ -124,6 +142,9 @@ struct app *app_new(const char *name, const char *appid, const char *apikey) {
                           URL_INDEXES, url_cbdata_new(list_indexes, a));
  
     kv_init(a->indexes);
+    app_setup_timeouts(a);
+
+    // Load all indexes managed by the app after everything else is complete
     app_load_indexes(a);
     return a;
 }
