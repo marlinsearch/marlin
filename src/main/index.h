@@ -5,6 +5,9 @@
 #include "common.h"
 #include "app.h"
 #include "threadpool.h"
+#include "shard.h"
+#include "flakeid.h"
+#include "kvec.h"
 
 #define MAX_INDEX_NAME      128
 #define MAX_NUM_SHARDS      16
@@ -34,7 +37,6 @@ struct in_job {
 
 /* Configuration information for an Index */
 struct index_cfg {
-    int num_shards;
 };
 
 /**
@@ -46,9 +48,15 @@ struct index {
     char name[MAX_INDEX_NAME];
     struct app *app;
     struct index_cfg *cfg;
+    int num_shards;
 
+    // The shards this index contains
+    kvec_t(struct shard *) shards;
+
+    // Tracking info
     uint64_t time_created;
     uint64_t time_updated;
+    flakeid_ctx_t *fctx; 
 
     // Threadpool for index modification
     threadpool_t *wpool;
@@ -57,6 +65,7 @@ struct index {
 
 };
 
-struct index *index_new(const char *name, struct app *a);
+struct index *index_new(const char *name, struct app *a, int num_shards);
+void index_free(struct index *in);
 
 #endif

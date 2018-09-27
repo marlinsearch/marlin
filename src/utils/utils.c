@@ -1,8 +1,10 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/time.h>
 #include "utils.h"
+#include "cfarmhash.h"
 
 /* Generates a random string */
 // TODO: Rewrite using libcrypto
@@ -41,5 +43,18 @@ uint64_t get_utc_seconds(void) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return tv.tv_sec;
+}
+
+char *generate_objid(flakeid_ctx_t *fctx) {
+    unsigned char id[16];
+    flakeid_get(fctx, id);
+    size_t outlen;
+    unsigned char *b = base64_encode(&id[1], 15, &outlen);
+    return (char *)b;
+}
+
+int get_shard_routing_id(const char *key, int num_shards) {
+    uint64_t hash = cfarmhash(key, strlen(key));
+    return hash % num_shards;
 }
 

@@ -8,10 +8,20 @@
 #include "platform.h"
 #include "mlog.h"
 
+#define VALGRIND_TEST 1
+
+#ifdef VALGRIND_TEST
+#define MDB_ENV_SIZE        655360000
+#else
+#define MDB_ENV_SIZE        65536000000
+#endif
+
 // File names
 #define SETTINGS_PATH   "./settings.json"
 #define APPS_FILE       "apps.json"
 #define INDEXES_FILE    "indexes.json"
+#define INDEX_FILE      "index.json"
+#define SHARD_FILE      "shard.json"
 
 // Settings
 #define APPID_SIZE      8
@@ -30,11 +40,14 @@
 #define J_FAILURE   "{\"success\":false}"
 
 // API JSON field names
-#define J_NAME      "name"
-#define J_APIKEY    "api_key"
-#define J_APPID     "app_id"
-#define J_CREATED   "created"
-#define J_UPDATED   "updated"
+#define J_NAME          "name"
+#define J_APIKEY        "api_key"
+#define J_APPID         "app_id"
+#define J_CREATED       "created"
+#define J_UPDATED       "updated"
+#define J_NUM_SHARDS    "num_shards"
+#define J_ID            "_id"
+#define J_SID           "_sid"
 
 #endif
 
