@@ -46,6 +46,7 @@
 #define J_CREATED       "created"
 #define J_UPDATED       "updated"
 #define J_NUM_SHARDS    "num_shards"
+#define J_NUM_JOBS      "num_jobs"
 #define J_ID            "_id"
 #define J_SID           "_sid"
 

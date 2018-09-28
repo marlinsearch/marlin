@@ -48,7 +48,6 @@ static char *compress(const char *src, int *compressed_len) {
     // Save the return value for error checking.
     const int compressed_data_size = LZ4_compress_default(src, compressed_data, src_size, max_dst_size);
     *compressed_len = compressed_data_size;
-    printf("Compressed from %d to %d\n", src_size, compressed_data_size);
     return compressed_data;
 }
 

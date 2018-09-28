@@ -13,6 +13,7 @@
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 
 struct marlin *marlin;
+threadpool_t *index_pool;
 
 
 // Load marlin settings
@@ -54,6 +55,7 @@ void load_settings(const char *settings_path) {
     } else {
         marlin->num_threads = sysconf(_SC_NPROCESSORS_ONLN);
     }
+    index_pool = threadpool_create(8, 64, 0);
     json_decref(js);
 }
 
@@ -226,6 +228,7 @@ void init_marlin(void) {
 
 void shutdown_marlin(void) {
     M_INFO("Shutting down !");
+    threadpool_destroy(index_pool, 0);
     // Deregister callbacks
     deregister_api_callback(marlin->appid, marlin->apikey, "GET", URL_MARLIN);
     deregister_api_callback(marlin->appid, marlin->apikey, "GET", URL_APPS);
