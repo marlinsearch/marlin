@@ -37,6 +37,7 @@ void index_worker_add_objects(struct index *in, json_t **sh_j) {
     struct worker worker;
     worker_init(&worker, in->num_shards);
     struct add_obj_tdata *sh_add = malloc(in->num_shards * sizeof(struct add_obj_tdata));
+
     for (int i = 0; i < in->num_shards; i++) {
         sh_add[i].tdata = &worker;
         sh_add[i].sh_j = sh_j[i];
@@ -47,6 +48,7 @@ void index_worker_add_objects(struct index *in, json_t **sh_j) {
 
     wait_for_workers(&worker);
     worker_destroy(&worker);
+    free(sh_add);
 }
 
 /* This is where new objects are added to the index.
