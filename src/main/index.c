@@ -6,8 +6,10 @@
 #include "api.h"
 #include "platform.h"
 #include "marlin.h"
+#include "workers.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
+#define USE_INDEX_THREAD_POOL 1
 
 struct api_path {
     const char *method;
@@ -15,6 +17,37 @@ struct api_path {
     KEY_ACCESS access;
     char *(*api_cb)(h2o_req_t *req, void *data);
 };
+
+struct add_obj_tdata {
+    struct worker *tdata;
+    struct index *index;
+    json_t *sh_j;
+    int shard_idx;
+};
+
+void worker_add_process(void *w) {
+    struct add_obj_tdata *add = w;
+    shard_add_objects(kv_A(add->index->shards, add->shard_idx), add->sh_j);
+    printf("Shard worker %d len %lu\n", add->shard_idx, json_array_size(add->sh_j));
+    json_decref(add->sh_j);
+    worker_done(add->tdata);
+}
+
+void index_worker_add_objects(struct index *in, json_t **sh_j) {
+    struct worker worker;
+    worker_init(&worker, in->num_shards);
+    struct add_obj_tdata *sh_add = malloc(in->num_shards * sizeof(struct add_obj_tdata));
+    for (int i = 0; i < in->num_shards; i++) {
+        sh_add[i].tdata = &worker;
+        sh_add[i].sh_j = sh_j[i];
+        sh_add[i].index = in;
+        sh_add[i].shard_idx = i;
+        threadpool_add(index_pool, worker_add_process, &sh_add[i], 0);
+    }
+
+    wait_for_workers(&worker);
+    worker_destroy(&worker);
+}
 
 /* This is where new objects are added to the index.
  * First we generate a objid for every object.  use the objid
@@ -40,13 +73,21 @@ static void index_add_objects(struct index *in, json_t *j) {
             free(id);
         }
 
+#ifndef USE_INDEX_THREAD_POOL
         // Finally add objects to the shards
+        // When not using thread pool it is simple, just iterate and
+        // get things done
         for (int i=0; i < in->num_shards; i++) {
             // send to shard
             shard_add_objects(kv_A(in->shards, i), sh_j[i]);
             printf("Shard %d len %lu\n", i, json_array_size(sh_j[i]));
             json_decref(sh_j[i]);
         }
+#else
+        // When we use a thread pool we need to handle some additional
+        // stuff 
+        index_worker_add_objects(in, sh_j);
+#endif
         free(sh_j);
     }
 }
@@ -159,12 +200,28 @@ static char *index_data_callback(h2o_req_t *req, void *data) {
     return strdup(J_SUCCESS);
 }
 
+static json_t *index_get_info_json(struct index *in) {
+    json_t *j = json_object();
+    json_object_set_new(j, J_NAME, json_string(in->name));
+    json_object_set_new(j, J_NUM_SHARDS, json_integer(in->num_shards));
+    json_object_set_new(j, J_NUM_JOBS, json_integer(in->job_count));
+    return j;
+}
+
 static char *index_get_settings_callback(h2o_req_t *req, void *data) {
     return strdup(J_SUCCESS);
 }
 
 static char *index_save_settings_callback(h2o_req_t *req, void *data) {
     return strdup(J_SUCCESS);
+}
+
+static char *index_info_callback(h2o_req_t *req, void *data) {
+    struct index *in = data;
+    json_t *j = index_get_info_json(in);
+    char *response = json_dumps(j, JSON_PRESERVE_ORDER|JSON_INDENT(4));
+    json_decref(j);
+    return response;
 }
 
 const struct api_path apipaths[] = {
@@ -174,6 +231,9 @@ const struct api_path apipaths[] = {
     {"GET", URL_SETTINGS, KA_G_CONFIG, index_get_settings_callback},
     // Lets you add new objects to this index
     {"POST", NULL, KA_ADD, index_data_callback},
+    // Query get
+    {"GET", URL_INFO, KA_QUERY|KA_BROWSE, index_info_callback},
+    // Done here
     {"", "", KA_NONE, NULL}
     /*
     // Browse

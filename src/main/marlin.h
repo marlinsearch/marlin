@@ -4,6 +4,7 @@
 #include "platform.h"
 #include "kvec.h"
 #include "app.h"
+#include "threadpool.h"
 
 struct marlin {
     char appid[APPID_SIZE+1];
@@ -18,6 +19,7 @@ struct marlin {
 };
 
 extern struct marlin *marlin;
+extern threadpool_t *index_pool;
 
 void load_settings(const char *settings_path);
 void init_marlin(void);

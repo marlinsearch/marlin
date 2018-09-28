@@ -7,5 +7,6 @@
 #define URL_APPS        "applications"
 #define URL_INDEXES     "indexes"      // Should have been indices, may be confusing
 #define URL_SETTINGS    "settings"
+#define URL_INFO        "info"
 
 #endif
