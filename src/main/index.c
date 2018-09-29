@@ -39,11 +39,15 @@ void index_worker_add_objects(struct index *in, json_t **sh_j) {
     struct add_obj_tdata *sh_add = malloc(in->num_shards * sizeof(struct add_obj_tdata));
 
     for (int i = 0; i < in->num_shards; i++) {
+        if (json_array_size(sh_j[i])) {
         sh_add[i].tdata = &worker;
         sh_add[i].sh_j = sh_j[i];
         sh_add[i].index = in;
         sh_add[i].shard_idx = i;
         threadpool_add(index_pool, worker_add_process, &sh_add[i], 0);
+        } else {
+            worker.pending--;
+        }
     }
 
     wait_for_workers(&worker);
@@ -68,6 +72,7 @@ static void index_add_objects(struct index *in, json_t *j) {
         // to arrive at the shard the object belongs.  Add it to the
         // shard array
         json_array_foreach(j, index, jo) {
+            mapping_extract(in->mapping, jo);
             char *id = generate_objid(in->fctx);
             json_object_set_new(jo, J_ID, json_string(id));
             int sid = get_shard_routing_id(id, in->num_shards);
@@ -342,6 +347,9 @@ struct index *index_new(const char *name, struct app *a, int num_shards) {
     in->num_shards = num_shards;
     in->time_created = get_utc_seconds();
     in->fctx = flakeid_ctx_create_with_spoof(NULL);
+    in->mapping = mapping_new();
+    // TODO : Update custom_id when a custom id is configured
+    in->custom_id = false;
     kv_init(in->shards);
 
 

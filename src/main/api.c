@@ -91,13 +91,13 @@ static h2o_pathconf_t *register_handler(h2o_hostconf_t *hconf, const char *path,
     return pathconf;
 }
 
-static int hello_world(h2o_handler_t *self, h2o_req_t *req) {
+static int ping_callback(h2o_handler_t *self, h2o_req_t *req) {
     static h2o_generator_t generator = {NULL, NULL};
 
     if (!h2o_memis(req->method.base, req->method.len, H2O_STRLIT("GET")))
         return -1;
 
-    h2o_iovec_t body = h2o_strdup(&req->pool, "hello world\n", SIZE_MAX);
+    h2o_iovec_t body = h2o_strdup(&req->pool, "pong\n", SIZE_MAX);
     req->res.status = 200;
     req->res.reason = "OK";
     h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_CONTENT_TYPE, NULL, H2O_STRLIT("text/plain"));
@@ -559,7 +559,7 @@ void init_api(void) {
 #endif
       pthread_rwlock_init(&url_lock, &rwlockattr);
 
-      register_handler(hostconf, "/hello-world", hello_world);
+      register_handler(hostconf, "/ping", ping_callback);
       register_handler(hostconf, "/1", api_v1);
 
       if (create_listener() != 0) {
