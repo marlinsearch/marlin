@@ -8,6 +8,7 @@
 #include "shard.h"
 #include "flakeid.h"
 #include "kvec.h"
+#include "mapping.h"
 
 #define MAX_INDEX_NAME      128
 #define MAX_NUM_SHARDS      16
@@ -49,6 +50,8 @@ struct index {
     struct app *app;
     struct index_cfg *cfg;
     int num_shards;
+    bool custom_id;
+    struct mapping *mapping;
 
     // The shards this index contains
     kvec_t(struct shard *) shards;

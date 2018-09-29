@@ -8,7 +8,7 @@
 #include "platform.h"
 #include "mlog.h"
 
-#define VALGRIND_TEST 1
+//#define VALGRIND_TEST 1
 
 #ifdef VALGRIND_TEST
 #define MDB_ENV_SIZE        655360000
@@ -49,6 +49,11 @@
 #define J_NUM_JOBS      "num_jobs"
 #define J_ID            "_id"
 #define J_SID           "_sid"
+#define J_TYPE          "type"
+#define J_PROPERTIES    "properties"
+#define J_FIELDID       "field_id"
+#define J_IS_INDEXED    "is_indexed"
+#define J_IS_FACET      "is_facet"
 
 #endif
 
