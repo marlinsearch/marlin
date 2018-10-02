@@ -40,11 +40,11 @@ void index_worker_add_objects(struct index *in, json_t **sh_j) {
 
     for (int i = 0; i < in->num_shards; i++) {
         if (json_array_size(sh_j[i])) {
-        sh_add[i].tdata = &worker;
-        sh_add[i].sh_j = sh_j[i];
-        sh_add[i].index = in;
-        sh_add[i].shard_idx = i;
-        threadpool_add(index_pool, worker_add_process, &sh_add[i], 0);
+            sh_add[i].tdata = &worker;
+            sh_add[i].sh_j = sh_j[i];
+            sh_add[i].index = in;
+            sh_add[i].shard_idx = i;
+            threadpool_add(index_pool, worker_add_process, &sh_add[i], 0);
         } else {
             worker.pending--;
         }
@@ -55,10 +55,41 @@ void index_worker_add_objects(struct index *in, json_t **sh_j) {
     free(sh_add);
 }
 
+/* When objects are added to an index, they may have to be parsed for schema
+ * discovery.  This happens only when the index_schema is not yet ready. */
+static void index_extract_object_mapping(struct index *in, json_t *j) {
+    // The incoming json can be an array or a single json object as our
+    // api to add objects supports both
+    if (json_is_array(j)) {
+        size_t index;
+        json_t *jo;
+
+        json_array_foreach(j, index, jo) {
+            mapping_extract(in->mapping, jo);
+        }
+    } else {
+        mapping_extract(in->mapping, j);
+    }
+
+    // Try to apply config to get index schema ready
+    if (mapping_apply_config(in->mapping)) {
+        // If index schema is ready, reindex existing objects before
+        // adding new objects
+        // TODO: Reindex existing shards
+    }
+}
+
 /* This is where new objects are added to the index.
  * First we generate a objid for every object.  use the objid
  * to determine which shard it belongs to and send it over */
 static void index_add_objects(struct index *in, json_t *j) {
+    // Perform schema extraction if necessary if we are not
+    // ready to index yet.  This may also end up reindexing
+    // existing objects in all shards
+    if (UNLIKELY(in->mapping->ready_to_index)) {
+        index_extract_object_mapping(in, j);
+    }
+
     if (json_is_array(j)) {
         size_t index;
         json_t *jo;
@@ -69,10 +100,12 @@ static void index_add_objects(struct index *in, json_t *j) {
         }
 
         // set the object id for every object and hash the object id
-        // to arrive at the shard the object belongs.  Add it to the
+        // to send to the shard the object belongs.  Add it to the
         // shard array
         json_array_foreach(j, index, jo) {
-            mapping_extract(in->mapping, jo);
+            if (UNLIKELY(!(in->cfg.configured && in->mapping->ready_to_index))) {
+                mapping_extract(in->mapping, jo);
+            }
             char *id = generate_objid(in->fctx);
             json_object_set_new(jo, J_ID, json_string(id));
             int sid = get_shard_routing_id(id, in->num_shards);
@@ -173,7 +206,7 @@ static void index_save_info(struct index *in) {
 /* This tries to load index information regarding shards and creation / update times
  * If none exists, dumps the current information in a index into the file.  The latter
  * happens when this is a newly created index */
-static void index_update_info(struct index *in) {
+static void index_load_info(struct index *in) {
     char path[PATH_MAX];
     snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, in->app->name, 
                                  in->name, INDEX_FILE);
@@ -215,11 +248,131 @@ static json_t *index_get_info_json(struct index *in) {
     return j;
 }
 
-static char *index_get_settings_callback(h2o_req_t *req, void *data) {
-    return strdup(J_SUCCESS);
+static int cfg_set_list_fields(void *data, json_t *ja) {
+    size_t index;
+    json_t *value;
+    int changed = 0;
+    kvec_t(char *) *fields = data;
+    // First check if any change has been made
+    if (kv_size(*fields) == json_array_size(ja)) {
+        json_array_foreach(ja, index, value) {
+            if (json_is_string(value)) {
+                if (strcmp(json_string_value(value), kv_A(*fields, index)) != 0) {
+                    changed = 1;
+                    break;
+                }
+            }
+        }
+    } else {
+        changed = 1;
+    }
+
+    // If changed, clear old values and set new values
+    if (changed) {
+        // First clear old index fields
+        while (kv_size(*fields) > 0) {
+            char *f = kv_pop(*fields);
+            free(f);
+        }
+        kv_destroy(*fields);
+        kv_init(*fields);
+
+        json_array_foreach(ja, index, value) {
+            if (json_is_string(value)) {
+                kv_push(char *, *fields, strdup(json_string_value(value)));
+            }
+        }
+    }
+    return changed;
+}
+
+
+static int index_load_json_settings(struct index *in, json_t *j) {
+    const char *key;
+    json_t *value;
+    // Make sure we are getting valid settings first
+    // Validation here
+    // TODO: Return proper error message on validation failures
+    json_object_foreach(j, key, value) {
+        if ((strcmp(J_S_INDEXFIELDS, key) == 0) && !is_json_string_array(value)) return -1;
+        if ((strcmp(J_S_FACETFIELDS, key) == 0) && !is_json_string_array(value)) return -1;
+        return -1;
+    }
+    // Now do the actual parsing of settings
+    int changed = 0;
+    json_object_foreach(j, key, value) {
+        if (strcmp(J_S_INDEXFIELDS, key) == 0) {
+            changed |= cfg_set_list_fields(&in->cfg.index_fields, value);
+        }
+        if (strcmp(J_S_FACETFIELDS, key) == 0) {
+            changed |= cfg_set_list_fields(&in->cfg.facet_fields, value);
+        }
+    }
+    // We need atleast index fields to be configured, before we are in configured status
+    // unless this happens, we do not start indexing data
+    if (kv_size(in->cfg.index_fields)) {
+        in->cfg.configured = true;
+    }
+    return changed;
+}
+
+static char *index_settings_to_json(const struct index *in) {
+    json_t *jo = json_object();
+    // set index fields
+    json_t *ji = json_array();
+    for (int i=0; i<kv_size(in->cfg.index_fields); i++) {
+        json_array_append_new(ji, json_string(kv_A(in->cfg.index_fields, i)));
+    }
+    json_object_set_new(jo, J_S_INDEXFIELDS, ji);
+    // set facet fields
+    json_t *jf = json_array();
+    for (int i=0; i<kv_size(in->cfg.facet_fields); i++) {
+        json_array_append_new(jf, json_string(kv_A(in->cfg.facet_fields, i)));
+    }
+    json_object_set_new(jo, J_S_FACETFIELDS, jf);
+ 
+    char *resp = json_dumps(jo, JSON_PRESERVE_ORDER|JSON_INDENT(4));
+    json_decref(jo);
+    return resp;
+}
+
+static void index_save_settings(struct index *in) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, in->app->name, 
+                                 in->name, SETTINGS_FILE);
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        M_ERR("Failed to save index settings");
+        return;
+    }
+    char *s = index_settings_to_json(in);
+    fprintf(f, "%s", s);
+    free(s);
+    fclose(f);
 }
 
 static char *index_save_settings_callback(h2o_req_t *req, void *data) {
+    struct index *in = (struct index *) data;
+    json_error_t error;
+    json_t *j = json_loadb(req->entity.base, req->entity.len, 0, &error);
+    if (j && json_is_object(j)) {
+        int changed = 0;
+        if ((changed = index_load_json_settings(in, j)) < 0) {
+            goto jerror;
+        }
+        index_save_settings(in);
+        // TODO: Ask all shards to reindex existing data
+        return strdup(J_SUCCESS);
+    }
+jerror:
+    json_decref(j);
+    req->res.status = 400;
+    req->res.reason = "Bad Request";
+    return strdup(J_FAILURE);
+}
+
+static char *index_get_settings_callback(h2o_req_t *req, void *data) {
+
     return strdup(J_SUCCESS);
 }
 
@@ -229,6 +382,18 @@ static char *index_info_callback(h2o_req_t *req, void *data) {
     char *response = json_dumps(j, JSON_PRESERVE_ORDER|JSON_INDENT(4));
     json_decref(j);
     return response;
+}
+
+static void index_load_settings(struct index *in) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, in->app->name, 
+                                 in->name, SETTINGS_FILE);
+    json_t *json;
+    json_error_t error;
+    json = json_load_file(path, 0, &error);
+    if (json && json_is_object(json)) {
+        index_load_json_settings(in, json);
+    }
 }
 
 const struct api_path apipaths[] = {
@@ -347,18 +512,24 @@ struct index *index_new(const char *name, struct app *a, int num_shards) {
     in->num_shards = num_shards;
     in->time_created = get_utc_seconds();
     in->fctx = flakeid_ctx_create_with_spoof(NULL);
-    in->mapping = mapping_new();
+    in->mapping = mapping_new(in);
     // TODO : Update custom_id when a custom id is configured
-    in->custom_id = false;
+    in->cfg.custom_id = false;
     kv_init(in->shards);
+
+    // Initialize config
+    in->cfg.configured = false;
+    kv_init(in->cfg.index_fields);
+    kv_init(in->cfg.facet_fields);
 
 
     // Create index path if not present
     char path[PATH_MAX];
     snprintf(path, sizeof(path), "%s/%s/%s", marlin->db_path, a->name, in->name);
     mkdir(path, 0775);
-    // Update stored index information if any
-    index_update_info(in);
+    // Load / Update stored index information if any
+    index_load_info(in);
+    index_load_settings(in);
 
     // NOTE : Only after updating information do we have the correct number of shards
     // TODO: Properly handle shards when more than 1 node is present and all shards

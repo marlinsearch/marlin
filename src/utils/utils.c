@@ -58,3 +58,13 @@ int get_shard_routing_id(const char *key, int num_shards) {
     return hash % num_shards;
 }
 
+bool is_json_string_array(const json_t *j) {
+    if (!json_is_array(j)) return false;
+    size_t id;
+    json_t *js;
+    json_array_foreach(j, id, js) {
+        if (!json_is_string(js)) return false;
+    }
+    return true;
+}
+
