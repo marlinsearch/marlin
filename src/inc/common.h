@@ -22,6 +22,7 @@
 #define INDEXES_FILE    "indexes.json"
 #define INDEX_FILE      "index.json"
 #define SHARD_FILE      "shard.json"
+#define SETTINGS_FILE   "settings.json"
 
 // Settings
 #define APPID_SIZE      8
@@ -39,7 +40,7 @@
 #define J_SUCCESS   "{\"success\":true}"
 #define J_FAILURE   "{\"success\":false}"
 
-// API JSON field names
+/* API JSON field names */
 #define J_NAME          "name"
 #define J_APIKEY        "api_key"
 #define J_APPID         "app_id"
@@ -54,6 +55,15 @@
 #define J_FIELDID       "field_id"
 #define J_IS_INDEXED    "is_indexed"
 #define J_IS_FACET      "is_facet"
+// API Settings fields
+#define J_S_INDEXFIELDS "indexed_fields"
+#define J_S_FACETFIELDS "facet_fields"
+
+
+// mapping 
+#define J_FULL_SCHEMA   "full_schema"
+#define J_INDEX_SCHEMA  "index_schema"
+#define J_INDEX_READY   "ready_to_index"
 
 #endif
 

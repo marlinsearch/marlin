@@ -38,6 +38,10 @@ struct in_job {
 
 /* Configuration information for an Index */
 struct index_cfg {
+    bool configured;
+    bool custom_id;
+    kvec_t(char *) index_fields; 
+    kvec_t(char *) facet_fields; 
 };
 
 /**
@@ -48,9 +52,8 @@ struct index_cfg {
 struct index {
     char name[MAX_INDEX_NAME];
     struct app *app;
-    struct index_cfg *cfg;
+    struct index_cfg cfg;
     int num_shards;
-    bool custom_id;
     struct mapping *mapping;
 
     // The shards this index contains
