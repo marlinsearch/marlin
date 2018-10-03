@@ -8,7 +8,7 @@
 #include "platform.h"
 #include "mlog.h"
 
-//#define VALGRIND_TEST 1
+#define VALGRIND_TEST 1
 
 #ifdef VALGRIND_TEST
 #define MDB_ENV_SIZE        655360000
@@ -21,6 +21,7 @@
 #define APPS_FILE       "apps.json"
 #define INDEXES_FILE    "indexes.json"
 #define INDEX_FILE      "index.json"
+#define MAPPING_FILE    "mapping.json"
 #define SHARD_FILE      "shard.json"
 #define SETTINGS_FILE   "settings.json"
 
@@ -60,10 +61,17 @@
 #define J_S_FACETFIELDS "facet_fields"
 
 
-// mapping 
+// config / settings field names
 #define J_FULL_SCHEMA   "full_schema"
 #define J_INDEX_SCHEMA  "index_schema"
 #define J_INDEX_READY   "ready_to_index"
+#define J_STRINGS       "strings"
+#define J_NUMBERS       "numbers"
+#define J_BOOLS         "booleans"
+#define J_FACETS        "facets"
+#define J_NUM_FIELDS    "num_fields"
+#define J_INDEX_PRIORITY "index_priority"
+#define J_FACET_PRIORITY "facet_priority"
 
 #endif
 

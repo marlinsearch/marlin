@@ -1,6 +1,8 @@
 #include <string.h>
 #include "mapping.h"
+#include "marlin.h"
 
+#pragma GCC diagnostic ignored "-Wformat-truncation="
 
 // *** NOTE : Needs to be in sync with F_TYPE in mapping.h !
 const char *type2str[] = {
@@ -17,6 +19,15 @@ const char *type2str[] = {
     "array"
 };
 
+static F_TYPE typestr_to_type(const char *ts) {
+    for (int i=0; i<F_MAX; i++) {
+        if (strcmp(type2str[i], ts) == 0) {
+            return i;
+        }
+    }
+    return 0;
+}
+
 static struct schema *find_field_under_schema(struct schema *sa, const char *name){
     struct schema *s = sa->child;
     while (s) {
@@ -30,7 +41,33 @@ static struct schema *find_field_under_schema(struct schema *sa, const char *nam
 
 static struct schema *schema_new(void) {
     struct schema *s = calloc(1, sizeof(struct schema));
+    s->i_priority = -1;
+    s->f_priority = -1;
     return s;
+}
+
+static void schema_free(struct schema *s) {
+    if (s->child) {
+        schema_free(s->child);
+    }
+    if (s->next) {
+        schema_free(s->next);
+    }
+    free(s);
+    s = NULL;
+}
+
+static void schema_reset(struct schema *s) {
+    if (s->child) {
+        schema_reset(s->child);
+    }
+    if (s->next) {
+        schema_reset(s->next);
+    }
+    s->is_facet = false;
+    s->is_indexed = false;
+    s->i_priority = -1;
+    s->f_priority = -1;
 }
 
 static void schema_to_json(const struct schema *s, json_t *j) {
@@ -38,6 +75,12 @@ static void schema_to_json(const struct schema *s, json_t *j) {
         json_t *jn = json_object();
         json_object_set_new(jn, J_TYPE, json_string(type2str[s->type]));
         json_object_set_new(jn, J_FIELDID, json_integer(s->field_id));
+        if (s->i_priority >= 0) {
+            json_object_set_new(jn, J_INDEX_PRIORITY, json_integer(s->i_priority));
+        }
+        if (s->f_priority >= 0) {
+            json_object_set_new(jn, J_FACET_PRIORITY, json_integer(s->f_priority));
+        }
         if (s->type == F_OBJECT || s->type == F_OBJLIST) {
             json_t *jp = json_object();
             schema_to_json(s->child, jp);
@@ -54,6 +97,65 @@ static void schema_to_json(const struct schema *s, json_t *j) {
         s = s->next;
     }
 }
+
+static void json_to_schema(json_t *j, struct schema *rs) {
+    const char *key;
+    json_t *value;
+    json_t *temp;
+    json_object_foreach(j, key, value) {
+        struct schema *c = schema_new();
+        // name
+        snprintf(c->fname, sizeof(c->fname), "%s", key);
+        // type
+        c->type = typestr_to_type(json_string_value(json_object_get(value, J_TYPE)));
+        // is_indexed
+        temp = json_object_get(value, J_IS_INDEXED);
+        if (temp && json_is_boolean(temp)) {
+            c->is_indexed = true;
+        }
+        // is_facet
+        temp = json_object_get(value, J_IS_FACET);
+        if (temp && json_is_boolean(temp)) {
+            c->is_facet = true;
+        }
+
+        // field id
+        temp = json_object_get(value, J_FIELDID);
+        if (temp && json_is_number(temp)) {
+            c->field_id = json_number_value(temp);
+        } else {
+            c->field_id = -1;
+        }
+        // index_priority
+        temp = json_object_get(value, J_INDEX_PRIORITY);
+        if (temp && json_is_number(temp)) {
+            c->i_priority = json_number_value(temp);
+        } else {
+            c->i_priority = -1;
+        }
+        // facet priority
+        temp = json_object_get(value, J_FACET_PRIORITY);
+        if (temp && json_is_number(temp)) {
+            c->f_priority = json_number_value(temp);
+        } else {
+            c->f_priority = -1;
+        }
+        // Add it to result schema
+        if (!rs->child) {
+            rs->child = c;
+        } else {
+            c->next = rs->child;
+            rs->child = c;
+        }
+        if (c->type == F_OBJECT || c->type == F_OBJLIST) {
+            temp = json_object_get(value, J_PROPERTIES);
+            if (temp && json_is_object(temp)) {
+                json_to_schema(temp, c);
+            }
+        }
+    }
+}
+
 
 static struct schema *schema_find_field(struct schema *s, const char *name) {
     M_DBG("FindField %s", name);
@@ -191,7 +293,7 @@ static void mapping_save(const struct mapping *m) {
     // Dump full schema
     if (m->full_schema) {
         json_t *full_schema = json_object();
-        schema_to_json(m->full_schema, full_schema);
+        schema_to_json(m->full_schema->child, full_schema);
         json_object_set_new(jo, J_FULL_SCHEMA, full_schema);
     } else {
         json_object_set_new(jo, J_FULL_SCHEMA, NULL);
@@ -200,15 +302,147 @@ static void mapping_save(const struct mapping *m) {
     // Index schema
     if (m->index_schema) {
         json_t *index_schema = json_object();
-        schema_to_json(m->index_schema, index_schema);
+        schema_to_json(m->index_schema->child, index_schema);
         json_object_set_new(jo, J_INDEX_SCHEMA, index_schema);
     } else {
         json_object_set_new(jo, J_INDEX_SCHEMA, NULL);
     }
 
+    json_object_set_new(jo, J_NUM_FIELDS, json_integer(m->num_fields));
     json_object_set_new(jo, J_INDEX_READY, json_boolean(m->ready_to_index));
+    // Store field names sorted by priority
+    json_t *jas = json_array();
+    for (int i = 0; i < kv_size(m->strings); i++) {
+        json_array_append_new(jas, json_string(kv_A(m->strings, i)));
+    }
+    json_object_set_new(jo, J_STRINGS, jas);
 
-    char *jstr = json_dumps(jo, JSON_PRESERVE_ORDER|JSON_INDENT(4));
+    json_t *jan = json_array();
+    for (int i = 0; i < kv_size(m->numbers); i++) {
+        json_array_append_new(jan, json_string(kv_A(m->numbers, i)));
+    }
+    json_object_set_new(jo, J_NUMBERS, jan);
+
+    json_t *jab = json_array();
+    for (int i = 0; i < kv_size(m->bools); i++) {
+        json_array_append_new(jab, json_string(kv_A(m->bools, i)));
+    }
+    json_object_set_new(jo, J_BOOLS, jab);
+
+    json_t *jaf = json_array();
+    for (int i = 0; i < kv_size(m->facets); i++) {
+        struct facet_info *fi = kv_A(m->facets, i);
+        json_t *jf = json_object();
+        json_object_set_new(jf, "name", json_string(fi->name));
+        json_object_set_new(jf, "type", json_integer(fi->type));
+        json_array_append_new(jaf, jf);
+    }
+    json_object_set_new(jo, J_FACETS, jaf);
+
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, m->index->app->name,
+                                 m->index->name, MAPPING_FILE);
+
+    FILE *fp = fopen(path, "w");
+    if (fp) {
+        char *jstr = json_dumps(jo, JSON_PRESERVE_ORDER|JSON_INDENT(4));
+        fprintf(fp, "%s", jstr);
+        fclose(fp);
+        free(jstr);
+    } else {
+        M_ERR("Failed to save mapping file %s", path);
+    }
+    json_decref(jo);
+}
+
+static void mapping_load(struct mapping *m) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, 
+             m->index->app->name, m->index->name, MAPPING_FILE);
+    json_error_t error;
+    json_t *j = json_load_file(path, 0, &error);
+    if (!j) {
+        M_DBG("Failed to mapping, not created yet ?");
+        return;
+    } 
+    // Load full schema
+    json_t *jfs = json_object_get(j, J_FULL_SCHEMA);
+    if (jfs && json_is_object(jfs) && json_object_size(jfs)) {
+        struct schema *fs = schema_new();
+        m->full_schema = fs;
+        json_to_schema(jfs, fs);
+    }
+    // Load indexed schema
+    json_t *jis = json_object_get(j, J_INDEX_SCHEMA);
+    if (jis && json_is_object(jis) && json_object_size(jis)) {
+        struct schema *is = schema_new();
+        m->index_schema = is;
+        json_to_schema(jis, is);
+    }
+
+    json_t *temp = json_object_get(j, J_INDEX_READY);
+    if (temp && m->full_schema && json_is_boolean(temp)) {
+        m->ready_to_index = json_boolean_value(temp);
+    }
+
+    temp = json_object_get(j, J_NUM_FIELDS);
+    if (temp && m->full_schema && json_is_number(temp)) {
+        m->num_fields = json_number_value(temp);
+    }
+ 
+    // TODO: DRY
+    temp = json_object_get(j, J_STRINGS);
+    if (json_is_array(temp)) {
+        size_t jid;
+        json_t *js;
+        json_array_foreach(temp, jid, js) {
+            if (json_is_string(js)) {
+                kv_push(char *, m->strings, strdup(json_string_value(js)));
+            }
+        }
+    }
+    m->num_strings = kv_size(m->strings);
+
+    temp = json_object_get(j, J_NUMBERS);
+    if (json_is_array(temp)) {
+        size_t jid;
+        json_t *js;
+        json_array_foreach(temp, jid, js) {
+            if (json_is_string(js)) {
+                kv_push(char *, m->numbers, strdup(json_string_value(js)));
+            }
+        }
+    }
+    m->num_numbers = kv_size(m->numbers);
+
+    temp = json_object_get(j, J_BOOLS);
+    if (json_is_array(temp)) {
+        size_t jid;
+        json_t *js;
+        json_array_foreach(temp, jid, js) {
+            if (json_is_string(js)) {
+                kv_push(char *, m->bools, strdup(json_string_value(js)));
+            }
+        }
+    }
+    m->num_bools = kv_size(m->bools);
+
+    temp = json_object_get(j, J_FACETS);
+    if (json_is_array(temp)) {
+        size_t jid;
+        json_t *js;
+        json_array_foreach(temp, jid, js) {
+            if (json_is_object(js)) {
+                struct facet_info *fi = malloc(sizeof(struct facet_info));
+                fi->name = strdup(json_string_value(json_object_get(js, "name")));
+                fi->type = json_integer_value(json_object_get(js, "type"));
+                kv_push(struct facet_info*, m->facets, fi);
+            }
+        }
+    }
+    m->num_facets = kv_size(m->facets);
+
+    json_decref(j);
 }
 
 /* This parses the incoming json object and parses the fields */
@@ -218,14 +452,13 @@ void mapping_extract(struct mapping *m, json_t *j) {
     }
     // If there are any updates  to the schema, save it
     if (schema_extract(m->full_schema, j, m) > 0 ) {
-        M_INFO("Saving mapping !!!!!!!!!!!!!!!!!!");
         // Save mapping as it has changed
         mapping_save(m);
     }
 }
 
 static struct schema *schema_dup(struct schema *in) {
-    struct schema *out = calloc(1, sizeof(struct schema));
+    struct schema *out = schema_new();
     memcpy(out, in, sizeof(struct schema));
     out->next = NULL;
     out->child = NULL;
@@ -251,12 +484,54 @@ static void extract_index_schema(struct schema *in, struct schema *out) {
     }
 }
 
+static void reset_field_kv(struct mapping *m, bool init) {
+    for (int i=0; i<kv_size(m->facets); i++) {
+        struct facet_info *fi = kv_A(m->facets, i);
+        free(fi->name);
+        free(fi);
+    }
+    kv_destroy(m->facets);
+    if (init) kv_init(m->facets);
+
+    for (int i=0; i<kv_size(m->numbers); i++) {
+        char *f = kv_A(m->numbers, i);
+        free(f);
+    }
+    kv_destroy(m->numbers);
+    if (init) kv_init(m->numbers);
+
+    for (int i=0; i<kv_size(m->strings); i++) {
+        char *f = kv_A(m->strings, i);
+        free(f);
+    }
+    kv_destroy(m->strings);
+    if (init) kv_init(m->strings);
+
+    for (int i=0; i<kv_size(m->bools); i++) {
+        char *f = kv_A(m->bools, i);
+        free(f);
+    }
+    kv_destroy(m->bools);
+    if (init) kv_init(m->bools);
+    m->num_bools = m->num_facets = m->num_strings = m->num_numbers = 0;
+}
 
 /* Once full schema is available, find out all fields specified in the 
  * configuration for index_fields and facet_fields and update data.  
  * Till this function returns true, indexing of data does not start
  * just storage happens */
 bool mapping_apply_config(struct mapping *m) {
+    M_DBG("Apply configuration for mapping");
+    // First clear out existing index_schema and all field vectors
+    if (m->index_schema) {
+        schema_free(m->index_schema);
+    }
+    // Reset is_indexed, is_facet and priorities in full_schema
+    if (m->full_schema) {
+        schema_reset(m->full_schema);
+    }
+    reset_field_kv(m, true);
+
     struct index_cfg *cfg = &m->index->cfg;
     // First make sure all fields exist and have a type learnt
     // else do not bother to extract fields
@@ -268,10 +543,6 @@ bool mapping_apply_config(struct mapping *m) {
     for (int i=0; i<kv_size(cfg->facet_fields); i++) {
         struct schema *fs = schema_find_field(m->full_schema->child, kv_A(cfg->facet_fields, i)); 
         if (!fs || fs->type == F_NULL) return false;
-        // Only strings, numbers and objects can be facets
-        if (fs->type != F_STRING && fs->type != F_STRLIST && 
-            fs->type != F_NUMBER && fs->type != F_NUMLIST && 
-            fs->type != F_OBJECT && fs->type != F_OBJLIST ) return false;
     }
 
     for (int i=0; i<kv_size(cfg->index_fields); i++) {
@@ -305,12 +576,22 @@ bool mapping_apply_config(struct mapping *m) {
     }
 
     // Extract index schema
-    m->index_schema = calloc(1, sizeof(struct schema));
+    m->index_schema = schema_new();
     extract_index_schema(m->full_schema, m->index_schema);
     // By now all configured fields have been found and type determined
     m->ready_to_index = true;
     mapping_save(m);
     return true;
+}
+
+void mapping_free(struct mapping *m) {
+    if (m->full_schema) {
+        schema_free(m->full_schema);
+    }
+    if (m->index_schema) {
+        schema_free(m->index_schema);
+    }
+    reset_field_kv(m, false);
 }
 
 struct mapping* mapping_new(struct index *in) {
@@ -320,6 +601,7 @@ struct mapping* mapping_new(struct index *in) {
     kv_init(m->bools);
     kv_init(m->facets);
     m->index = in;
+    mapping_load(m);
     return m;
 }
 

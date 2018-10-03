@@ -62,6 +62,7 @@ struct mapping {
 struct mapping* mapping_new(struct index *index);
 void mapping_extract(struct mapping *m, json_t *j);
 bool mapping_apply_config(struct mapping *m);
+void mapping_free(struct mapping *m);
 
 
 #endif

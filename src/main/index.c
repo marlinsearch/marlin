@@ -70,9 +70,10 @@ static void index_extract_object_mapping(struct index *in, json_t *j) {
     } else {
         mapping_extract(in->mapping, j);
     }
+    M_DBG("configured %d", in->cfg.configured);
 
     // Try to apply config to get index schema ready
-    if (mapping_apply_config(in->mapping)) {
+    if (in->cfg.configured && mapping_apply_config(in->mapping)) {
         // If index schema is ready, reindex existing objects before
         // adding new objects
         // TODO: Reindex existing shards
@@ -86,7 +87,7 @@ static void index_add_objects(struct index *in, json_t *j) {
     // Perform schema extraction if necessary if we are not
     // ready to index yet.  This may also end up reindexing
     // existing objects in all shards
-    if (UNLIKELY(in->mapping->ready_to_index)) {
+    if (UNLIKELY(!in->mapping->ready_to_index)) {
         index_extract_object_mapping(in, j);
     }
 
@@ -103,9 +104,6 @@ static void index_add_objects(struct index *in, json_t *j) {
         // to send to the shard the object belongs.  Add it to the
         // shard array
         json_array_foreach(j, index, jo) {
-            if (UNLIKELY(!(in->cfg.configured && in->mapping->ready_to_index))) {
-                mapping_extract(in->mapping, jo);
-            }
             char *id = generate_objid(in->fctx);
             json_object_set_new(jo, J_ID, json_string(id));
             int sid = get_shard_routing_id(id, in->num_shards);
@@ -296,7 +294,6 @@ static int index_load_json_settings(struct index *in, json_t *j) {
     json_object_foreach(j, key, value) {
         if ((strcmp(J_S_INDEXFIELDS, key) == 0) && !is_json_string_array(value)) return -1;
         if ((strcmp(J_S_FACETFIELDS, key) == 0) && !is_json_string_array(value)) return -1;
-        return -1;
     }
     // Now do the actual parsing of settings
     int changed = 0;
@@ -351,7 +348,7 @@ static void index_save_settings(struct index *in) {
     fclose(f);
 }
 
-static char *index_save_settings_callback(h2o_req_t *req, void *data) {
+static char *index_set_settings_callback(h2o_req_t *req, void *data) {
     struct index *in = (struct index *) data;
     json_error_t error;
     json_t *j = json_loadb(req->entity.base, req->entity.len, 0, &error);
@@ -361,10 +358,15 @@ static char *index_save_settings_callback(h2o_req_t *req, void *data) {
             goto jerror;
         }
         index_save_settings(in);
+        if (changed) {
+            mapping_apply_config(in->mapping);
+        }
+        json_decref(j);
         // TODO: Ask all shards to reindex existing data
         return strdup(J_SUCCESS);
     }
 jerror:
+    M_ERR("Json error %s", error.source);
     json_decref(j);
     req->res.status = 400;
     req->res.reason = "Bad Request";
@@ -372,8 +374,9 @@ jerror:
 }
 
 static char *index_get_settings_callback(h2o_req_t *req, void *data) {
-
-    return strdup(J_SUCCESS);
+    struct index *in = data;
+    char *s = index_settings_to_json(in);
+    return s;
 }
 
 static char *index_info_callback(h2o_req_t *req, void *data) {
@@ -393,12 +396,13 @@ static void index_load_settings(struct index *in) {
     json = json_load_file(path, 0, &error);
     if (json && json_is_object(json)) {
         index_load_json_settings(in, json);
+        json_decref(json);
     }
 }
 
 const struct api_path apipaths[] = {
     // Set Settings
-    {"POST", URL_SETTINGS, KA_S_CONFIG, index_save_settings_callback},
+    {"POST", URL_SETTINGS, KA_S_CONFIG, index_set_settings_callback},
     // Get current settings for this index
     {"GET", URL_SETTINGS, KA_G_CONFIG, index_get_settings_callback},
     // Lets you add new objects to this index
