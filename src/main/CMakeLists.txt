@@ -1,12 +1,8 @@
-include_directories(${CMAKE_SOURCE_DIR}/inc)
-include_directories(${CMAKE_SOURCE_DIR}/../deps)
-include_directories(${CMAKE_SOURCE_DIR}/../deps/h2o/include)
-include_directories(${CMAKE_SOURCE_DIR}/../deps/lmdb)
-include_directories(${CMAKE_SOURCE_DIR}/../deps/jansson/src)
-
 link_directories(${CMAKE_SOURCE_DIR}/../deps/h2o)
 link_directories(${CMAKE_SOURCE_DIR}/../deps/lmdb)
-link_directories(${CMAKE_SOURCE_DIR}/../deps/jansson)
+link_directories(${CMAKE_SOURCE_DIR}/../deps/jansson/src/.libs)
+link_directories(${CMAKE_SOURCE_DIR}/../deps/jemalloc/lib)
+link_directories(${CMAKE_SOURCE_DIR}/../deps/utf8proc)
 
 add_executable (marlin main.c marlin.c api.c app.c index.c shard.c sdata.c workers.c mapping.c)
 
