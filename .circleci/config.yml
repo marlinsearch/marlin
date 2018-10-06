@@ -17,7 +17,7 @@ jobs:
       - run:
           name: Coverage
           command: |
-            make test
+            make coverage
             cd build-debug
             lcov --directory . --capture --output-file coverage.info
             lcov --remove coverage.info '/usr/*' --output-file coverage.info
