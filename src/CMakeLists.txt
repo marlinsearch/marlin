@@ -9,7 +9,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
 if (DEBUG)
 include(CodeCoverage)
-SETUP_TARGET_FOR_COVERAGE(marlin_coverage "python ~/marlin/marlin/test/test.py" coverage)
+SETUP_TARGET_FOR_COVERAGE(marlin_coverage "python ../test/test.py" coverage)
 endif ()
 
 include_directories(${CMAKE_SOURCE_DIR}/inc)
