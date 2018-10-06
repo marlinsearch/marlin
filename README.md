@@ -1,6 +1,4 @@
-[![CircleCI](https://circleci.com/gh/marlinsearch/marlin.svg?style=svg)](https://circleci.com/gh/marlinsearch/marlin)
-
-[![codecov](https://codecov.io/gh/marlinsearch/marlin/branch/master/graph/badge.svg)](https://codecov.io/gh/marlinsearch/marlin)
+[![CircleCI](https://circleci.com/gh/marlinsearch/marlin.svg?style=svg)](https://circleci.com/gh/marlinsearch/marlin) [![codecov](https://codecov.io/gh/marlinsearch/marlin/branch/master/graph/badge.svg)](https://codecov.io/gh/marlinsearch/marlin)
 
 # MARLIN SEARCH
 make deps to build all dependencies
