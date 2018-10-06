@@ -4,6 +4,7 @@
     "db_location": "./db",
     "certificate": "./keys/marlin.net/fullchain.cer",
     "private_key": "./keys/marlin.net/marlin.net.key",
+    "num_threads": 8,
     "port": 9002,
     "https": false,
     "index_pool_threads": 8,
