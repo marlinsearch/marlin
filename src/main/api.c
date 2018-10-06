@@ -1,3 +1,4 @@
+// Mostly a copy of h2o/src/main.c with handling for Marlin api's
 #include <stdio.h>
 #include <signal.h>
 #include <h2o.h>
