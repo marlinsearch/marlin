@@ -48,13 +48,16 @@ helgrind: debug
 	@valgrind --tool=helgrind -v ./build-debug/main/marlin
 
 testsetup: all
-	@- $(RM) -rf ./db/acme/test/ds
+	@- $(RM) -rf ./db/acme/test/s_*
 	@  echo "Generating test data ..."
-	@  (cd test && python data.py>test.js)
+	@  (cd test && python data_gen.py > test.json)
 	@  echo "Generated test data ..."
 
 test: testsetup
 	@  (cd test && python test.py)
+
+coverage: testsetup debug
+	@  (cd build-debug && make marlin_coverage)
 
 testlive:
 	@  (cd test && python test.py live)

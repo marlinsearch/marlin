@@ -74,7 +74,7 @@ static void on_sigterm(int signo) {
 static void setup_signal_handlers(void) {
     h2o_set_signal_handler(SIGTERM, on_sigterm);
     // TODO: Enable on release build.
-    //h2o_set_signal_handler(SIGINT, on_sigterm);
+    h2o_set_signal_handler(SIGINT, on_sigterm);
 #ifdef VALGRIND_TEST
     h2o_set_signal_handler(SIGINT, on_sigterm);
 #endif
