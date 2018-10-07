@@ -101,12 +101,14 @@ static char *delete_app_handler(h2o_req_t *req, void *data) {
         if (kv_A(marlin->apps, i) == data) {
             kv_del(struct app *, marlin->apps, i);
             // De-register callback
-            char urldel[PATH_MAX];
-            sprintf(urldel, "%s/%s", URL_APPS, a->name);
+            char urlapp[PATH_MAX];
+            sprintf(urlapp, "%s/%s", URL_APPS, a->name);
+            // Remove handler to get app
+            deregister_api_callback(marlin->appid, marlin->apikey, "GET", urlapp);
             // remove the handler for deletion
-            deregister_api_callback(marlin->appid, marlin->apikey, "DELETE", urldel);
-            // Free app
-            app_free(a);
+            deregister_api_callback(marlin->appid, marlin->apikey, "DELETE", urlapp);
+            // Delete app
+            app_delete(a);
             break;
         }
     }
@@ -115,11 +117,26 @@ static char *delete_app_handler(h2o_req_t *req, void *data) {
     return strdup(J_SUCCESS);
 }
 
+/* API handler to get an application */
+static char *get_app_handler(h2o_req_t *req, void *data) {
+    struct app *a = (struct app *)data;
+    json_t *jo = json_object();
+    json_object_set_new(jo, J_NAME, json_string(a->name));
+    json_object_set_new(jo, J_APPID, json_string(a->appid));
+    json_object_set_new(jo, J_APIKEY, json_string(a->apikey));
+    char *resp = json_dumps(jo, JSON_PRESERVE_ORDER|JSON_INDENT(4));
+    json_decref(jo);
+    return resp;
+}
+
+/* Called to create an app either when called by api or when Marlin is restarted
+ * and the apps are loaded from applications file */
 static int create_app_from_json(struct json_t *j) {
     const char *name = json_string_value(json_object_get(j, J_NAME));
     const char *appid = json_string_value(json_object_get(j, J_APPID));
     const char *apikey = json_string_value(json_object_get(j, J_APIKEY));
 
+    // TODO: Return proper error codes and let the user know what the problem is
     if (!(name && appid && apikey)) return -1;
     if (strlen(appid) != APPID_SIZE) return -1;
     if (strlen(apikey) != APIKEY_SIZE) return -1;
@@ -137,11 +154,14 @@ static int create_app_from_json(struct json_t *j) {
     kv_push(struct app *, marlin->apps, a);
 
     // Register URL to delete application
-    char urldel[PATH_MAX];
-    sprintf(urldel, "%s/%s", URL_APPS, a->name);
+    char urlapp[PATH_MAX];
+    sprintf(urlapp, "%s/%s", URL_APPS, a->name);
     // Setup delete handler, only master can delete this
     register_api_callback(marlin->appid, marlin->apikey, "DELETE", 
-            urldel, url_cbdata_new(delete_app_handler, a));
+            urlapp, url_cbdata_new(delete_app_handler, a));
+    // Setup get handler, only master can get this
+    register_api_callback(marlin->appid, marlin->apikey, "GET", 
+            urlapp, url_cbdata_new(get_app_handler, a));
     return 0;
 }
 
@@ -165,10 +185,14 @@ static void load_apps(void) {
     }
 }
 
+/* Handler which lists all applications */
 static char *list_apps_handler(h2o_req_t *req, void *data) {
     return app_list_to_json();
 }
 
+/* API Handler to create a new application.  An appId and apiKey
+ * can be specified or they will be automatically generated if required.
+ * At the minimum an app name is required.  If not results in a badrequest */
 static char *create_app_handler(h2o_req_t *req, void *data) {
     json_error_t error;
     json_t *j = json_loadb(req->entity.base, req->entity.len, 0, &error);
@@ -186,8 +210,6 @@ static char *create_app_handler(h2o_req_t *req, void *data) {
         json_object_set_new(j, J_APIKEY, json_string(apikey));
     }
 
-    M_INFO("create app %s %s", req->entity.base, error.text);
-    M_INFO("create app %s", json_dumps(j, 0));
     if (j) {
         int r = create_app_from_json(j);
         if (r < 0) goto jerror;

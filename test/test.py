@@ -22,8 +22,8 @@ index_url = url + index
 query_url = url + index + "/query"
 cfg_url = url + index + "/settings"
 key_url = url + "keys"
-master_app_id: "abcdefgh",
-master_api_key: "12345678901234567890123456789012",
+master_app_id = "abcdefgh"
+master_api_key = "12345678901234567890123456789012"
 
 
 def start_marlin():
@@ -62,11 +62,105 @@ class TestBase(unittest.TestCase):
         t = time.time() - self.startTime
         print "%s: %.4fs" % (self.id(), t)
 
+    def use_app_key(self, appId, apiKey):
+        self.app_id = appId
+        self.api_key = apiKey
+
+    def get_headers(self):
+        headers = { 'X-Marlin-Application-Id': self.app_id, 
+                    'X-Marlin-REST-API-KEY': self.api_key, 
+                    'Content-Type':'application/json'}
+        return headers
+
+    def post(self, url, data, statuscode=200):
+        headers = self.get_headers()
+        r = requests.post(url, data=json.dumps(data), headers=headers, verify=False)
+        self.assertEqual(r.status_code, statuscode)
+        response = r.json()
+        return response
+
+    def delete(self, url, statuscode=200):
+        headers = self.get_headers()
+        r = requests.delete(url, headers=headers, verify=False)
+        self.assertEqual(r.status_code, statuscode)
+        response = r.json()
+        return response
+
+    def put(self, purl, pd, statuscode=200):
+        headers = self.get_headers()
+        r = requests.put(purl, data=json.dumps(pd), headers=headers, verify=False)
+        self.assertEqual(r.status_code, statuscode)
+        response = r.json()
+        return response
+
+    def patch(self, purl, pd, statuscode=200):
+        headers = self.get_headers()
+        r = requests.patch(purl, data=json.dumps(pd), headers=headers, verify=False)
+        self.assertEqual(r.status_code, statuscode)
+        response = r.json()
+        return response
+
+    def get(self, purl, statuscode=200):
+        headers = self.get_headers()
+        r = requests.get(purl, headers=headers, verify=False)
+        self.assertEqual(r.status_code, statuscode)
+        response = r.json()
+        return response
+
+
+
 class TestPing(TestBase):
     def test_a_ping(self):
         ping_url = url[0:len(url)-2]
         r = requests.get(ping_url + 'ping')
         self.assertEqual(r.status_code, 200)
+
+class TestApp(TestBase):
+    def setUp(self):
+        self.use_app_key(master_app_id, master_api_key)
+        super(TestApp, self).setUp()
+
+    def test_a_marlin(self):
+        marlin_url = url + 'marlin'
+        r = self.get(marlin_url)
+        self.assertTrue('version' in r)
+
+    def test_b_invalid_app_key(self):
+        self.use_app_key('lkjaslkdfj', master_api_key)
+        marlin_url = url + 'marlin'
+        r = self.get(marlin_url, 400)
+        self.use_app_key(master_app_id, 'asdfasdflkjwlerjljwer')
+        marlin_url = url + 'marlin'
+        r = self.get(marlin_url, 400)
+
+    def test_c_get_app_list(self):
+        apps_url = url + 'applications'
+        r = self.get(apps_url)
+        self.assertTrue(isinstance(r, list))
+
+    def test_d_app_create_delete(self):
+        # create a new app called testapp
+        apps_url = url + 'applications'
+        app = {'name' : 'testapp'}
+        r = self.post(apps_url, app)
+        self.assertTrue('name' in r)
+        self.assertTrue('appId' in r)
+        self.assertTrue('apiKey' in r)
+        # try creating with same app name
+        self.post(apps_url, app, 400)
+        # try creating with same app id
+        app['name'] = 'test2app'
+        app['appId'] = r['appId']
+        self.post(apps_url, app, 400)
+        # try to get app
+        apps_url = apps_url + '/testapp'
+        r2 = self.get(apps_url)
+        self.assertTrue(r['name'] == r2['name'])
+        self.assertTrue(r['apiKey'] == r2['apiKey'])
+        self.assertTrue(r['appId'] == r2['appId'])
+        # delete app
+        r = self.delete(apps_url)
+        r2 = self.get(apps_url, 403)
 
 if __name__ == '__main__':
     print "Starting tests .."
@@ -77,10 +171,17 @@ if __name__ == '__main__':
  
 
     fail = 0
+
     # Ping test
     suite = unittest.TestLoader().loadTestsFromTestCase(TestPing)
     r = unittest.TextTestRunner(verbosity=5).run(suite)
     fail = fail + len(r.failures)
+
+    # App tests
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestApp)
+    r = unittest.TextTestRunner(verbosity=5).run(suite)
+    fail = fail + len(r.failures)
+
 
     if not live:
         stop_marlin()

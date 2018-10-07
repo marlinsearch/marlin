@@ -32,5 +32,6 @@ struct app {
 
 struct app *app_new(const char *name, const char *appid, const char *apikey);
 void app_free(struct app *a);
+void app_delete(struct app *a);
 
 #endif

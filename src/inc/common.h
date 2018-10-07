@@ -8,7 +8,7 @@
 #include "platform.h"
 #include "mlog.h"
 
-//#define VALGRIND_TEST 1
+#define VALGRIND_TEST 1
 
 #ifdef VALGRIND_TEST
 #define MDB_ENV_SIZE        655360000

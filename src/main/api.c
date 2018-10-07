@@ -163,7 +163,6 @@ static int api_handler(h2o_handler_t *self, h2o_req_t *req, int (*cb_handler)(h2
     char apikey[APIKEY_SIZE+1];
     appid[0] = '\0';
     apikey[0] = '\0';
-    M_DBG("Path %s", req->path.base);
 
     // See if apikey and id is part of the query parameters
     if (req->query_at != SIZE_MAX) {
