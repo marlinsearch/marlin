@@ -9,9 +9,9 @@ import timeit
 import ssl
 import os
 import requests
-from requests.packages.urllib3.exceptions import InsecureRequestWarning
+#from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-print dir(ssl)
+#print dir(ssl)
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
@@ -22,12 +22,14 @@ index_url = url + index
 query_url = url + index + "/query"
 cfg_url = url + index + "/settings"
 key_url = url + "keys"
+master_app_id: "abcdefgh",
+master_api_key: "12345678901234567890123456789012",
 
 
 def start_marlin():
     print "starting ..."
     os.system("cd .. && ./build-debug/main/marlin &")
-    time.sleep(3)
+    time.sleep(5)
 
 def stop_marlin():
     os.system("killall marlin")
@@ -40,8 +42,8 @@ class MyHTTPSHandler(urllib2.HTTPSHandler, urllib2.HTTPDefaultErrorHandler):
 class TestBase(unittest.TestCase):
     def __init__(self, x):
         unittest.TestCase.__init__(self, x)
-        urllib2.install_opener(urllib2.build_opener(MyHTTPSHandler(context=ctx)))
-        requests.packages.urllib3.disable_warnings()
+#        urllib2.install_opener(urllib2.build_opener(MyHTTPSHandler(context=ctx)))
+#        requests.packages.urllib3.disable_warnings()
 
     # TODO: Global load and clear index for each testsuite
     @classmethod
@@ -54,7 +56,7 @@ class TestBase(unittest.TestCase):
 
     def setUp(self):
         self.startTime = time.time()
-        requests.packages.urllib3.disable_warnings()
+#        requests.packages.urllib3.disable_warnings()
 
     def tearDown(self):
         t = time.time() - self.startTime
@@ -68,7 +70,6 @@ class TestPing(TestBase):
 
 if __name__ == '__main__':
     print "Starting tests .."
-    requests.packages.urllib3.disable_warnings()
     live = (len(sys.argv) > 1) and sys.argv[1] == 'live'
     if not live:
         stop_marlin()

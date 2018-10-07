@@ -28,14 +28,14 @@
 // Settings
 #define APPID_SIZE      8
 #define APIKEY_SIZE     32
-#define MASTER_APPID    "master_app_id"
-#define MASTER_APIKEY   "master_api_key"
-#define DB_LOCATION     "db_location"
+#define MASTER_APPID    "masterAppId"
+#define MASTER_APIKEY   "masterApiKey"
+#define DB_LOCATION     "dbLocation"
 #define SSL_CERT        "certificate"
-#define SSL_KEY         "private_key"
+#define SSL_KEY         "privateKey"
 #define PORT            "port"
 #define HTTPS           "https"
-#define NUMTHREADS      "num_threads"
+#define NUMTHREADS      "numThreads"
 
 // Json responses
 #define J_SUCCESS   "{\"success\":true}"
@@ -43,35 +43,35 @@
 
 /* API JSON field names */
 #define J_NAME          "name"
-#define J_APIKEY        "api_key"
-#define J_APPID         "app_id"
+#define J_APIKEY        "apiKey"
+#define J_APPID         "appId"
 #define J_CREATED       "created"
 #define J_UPDATED       "updated"
-#define J_NUM_SHARDS    "num_shards"
-#define J_NUM_JOBS      "num_jobs"
+#define J_NUM_SHARDS    "numShards"
+#define J_NUM_JOBS      "numJobs"
 #define J_ID            "_id"
 #define J_SID           "_sid"
 #define J_TYPE          "type"
 #define J_PROPERTIES    "properties"
-#define J_FIELDID       "field_id"
-#define J_IS_INDEXED    "is_indexed"
-#define J_IS_FACET      "is_facet"
+#define J_FIELDID       "fieldId"
+#define J_IS_INDEXED    "isIndexed"
+#define J_IS_FACET      "isFacet"
 // API Settings fields
-#define J_S_INDEXFIELDS "indexed_fields"
-#define J_S_FACETFIELDS "facet_fields"
+#define J_S_INDEXFIELDS "indexedFields"
+#define J_S_FACETFIELDS "facetFields"
 
 
 // config / settings field names
-#define J_FULL_SCHEMA   "full_schema"
-#define J_INDEX_SCHEMA  "index_schema"
-#define J_INDEX_READY   "ready_to_index"
+#define J_FULL_SCHEMA   "fullSchema"
+#define J_INDEX_SCHEMA  "indexSchema"
+#define J_INDEX_READY   "readyToIndex"
 #define J_STRINGS       "strings"
 #define J_NUMBERS       "numbers"
 #define J_BOOLS         "booleans"
 #define J_FACETS        "facets"
-#define J_NUM_FIELDS    "num_fields"
-#define J_INDEX_PRIORITY "index_priority"
-#define J_FACET_PRIORITY "facet_priority"
+#define J_NUM_FIELDS    "numFields"
+#define J_INDEX_PRIORITY "indexPrority"
+#define J_FACET_PRIORITY "facetPriority"
 
 #endif
 
