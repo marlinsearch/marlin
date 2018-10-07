@@ -133,7 +133,7 @@ static void app_load_indexes(struct app *c) {
 
 /* Creates a new app or loads an existing app */
 struct app *app_new(const char *name, const char *appid, const char *apikey) {
-    struct app *a = malloc(sizeof(struct app));
+    struct app *a = calloc(1, sizeof(struct app));
     snprintf(a->name, sizeof(a->name), "%s", name);
     snprintf(a->appid, sizeof(a->appid), "%s", appid);
     snprintf(a->apikey, sizeof(a->apikey), "%s", apikey);
@@ -158,5 +158,26 @@ struct app *app_new(const char *name, const char *appid, const char *apikey) {
 }
 
 void app_free(struct app *a) {
+    // Deregister app api handlers
+    deregister_api_callback(a->appid, a->apikey, "POST", URL_INDEXES);
+    deregister_api_callback(a->appid, a->apikey, "GET", URL_INDEXES);
+    // free the indices
+    for (int i=0; i<kv_size(a->indexes); i++) {
+        index_free(kv_A(a->indexes, i));
+    }
+    kv_destroy(a->indexes);
+    // remove linked timeouts
+    h2o_timeout_unlink(&a->timeout_entry.te);
+    h2o_timeout_dispose(g_h2o_ctx->loop, &a->timeout);
+    // finally free the app
     free(a);
 }
+
+void app_delete(struct app *a) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s", marlin->db_path, a->name);
+    // TODO: Actually delete app and its indexes if any
+    app_free(a);
+    rmdir(path);
+}
+
