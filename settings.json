@@ -1,13 +1,13 @@
 {
-    "master_app_id": "abcdefgh",
-    "master_api_key": "12345678901234567890123456789012",
-    "db_location": "./db",
+    "masterAppId": "abcdefgh",
+    "masterApiKey": "12345678901234567890123456789012",
+    "dbLocation": "./db",
     "certificate": "./keys/marlin.net/fullchain.cer",
-    "private_key": "./keys/marlin.net/marlin.net.key",
-    "num_threads": 8,
+    "privateKey": "./keys/marlin.net/marlin.net.key",
+    "numThreads": 8,
     "port": 9002,
     "https": false,
-    "index_pool_threads": 8,
-    "index_pool_size": 64
+    "indexPoolThreads": 8,
+    "indexPoolSize": 64
 }
 
