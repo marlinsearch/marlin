@@ -84,13 +84,8 @@ flakeid_ctx_t *flakeid_ctx_create(const unsigned char *machine, size_t len) {
 }
 
 flakeid_ctx_t *flakeid_ctx_create_with_if(const char *if_name) {
-  flakeid_ctx_t *ret = NULL;
   unsigned char mac[6];
-
-  //if (!get_mac(if_name, mac)) {
-    ret = flakeid_ctx_create(mac, 6);
-  //}
-
+  flakeid_ctx_t *ret = flakeid_ctx_create(mac, 6);
   return ret;
 }
 

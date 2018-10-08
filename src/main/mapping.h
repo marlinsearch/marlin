@@ -56,7 +56,6 @@ struct mapping {
     kvec_t(char *) bools;
     kvec_t(char *) geos;
     kvec_t(struct facet_info *) facets;
- 
 };
 
 struct mapping* mapping_new(struct index *index);
