@@ -18,10 +18,12 @@ struct sdata {
     MDB_txn *txn;
     MDB_dbi sid2json_dbi;   // Maps shard bitmap id to json data
     MDB_dbi id2sid_dbi;     // Maps the document id to shard bitmap id
-
 };
 
 struct sdata *sdata_new(struct shard *s);
 void sdata_add_objects(struct sdata *sd, json_t *j);
+void sdata_free(struct sdata *sd);
+void sdata_delete(struct sdata *sd);
+void sdata_clear(struct sdata *sd);
 
 #endif

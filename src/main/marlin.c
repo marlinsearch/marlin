@@ -255,5 +255,12 @@ void shutdown_marlin(void) {
     deregister_api_callback(marlin->appid, marlin->apikey, "GET", URL_MARLIN);
     deregister_api_callback(marlin->appid, marlin->apikey, "GET", URL_APPS);
     deregister_api_callback(marlin->appid, marlin->apikey, "POST", URL_APPS);
+    // Free apps
+    for (int i = 0; i < kv_size(marlin->apps); i++) {
+        struct app *a = kv_A(marlin->apps, i);
+        app_free(a);
+    }
+    kv_destroy(marlin->apps);
+    free(marlin);
 }
 

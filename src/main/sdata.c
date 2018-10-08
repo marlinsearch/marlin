@@ -147,3 +147,43 @@ struct sdata *sdata_new(struct shard *shard) {
     return s;
 }
 
+void sdata_free(struct sdata *sd) {
+    mdb_dbi_close(sd->env, sd->id2sid_dbi);
+    mdb_dbi_close(sd->env, sd->sid2json_dbi);
+    mdb_env_close(sd->env);
+    free(sd);
+}
+
+void sdata_clear(struct sdata *sd) {
+    mdb_txn_begin(sd->env, NULL, 0, &sd->txn);
+    int rc = 0;
+    if ((rc = mdb_drop(sd->txn, sd->id2sid_dbi, 0)) != 0) {
+        M_ERR("Failed to drop id2sid dbi %d %s", rc, mdb_strerror(rc));
+    }
+    if ((rc = mdb_drop(sd->txn, sd->sid2json_dbi, 0)) != 0) {
+        M_ERR("Failed to drop sid2json dbi %d %s", rc, mdb_strerror(rc));
+    }
+    mdb_txn_commit(sd->txn);
+    sd->lastoid = 1;
+}
+
+/* Deletes the shard data.  Drops all data and removes the data folder */
+void sdata_delete(struct sdata *sd) {
+    // Drop all dbis
+    sdata_clear(sd);
+    char path[PATH_MAX];
+    struct shard *shard = sd->shard;
+    // Get the shard_data path
+    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d/data", marlin->db_path, shard->index->app->name, shard->index->name, "s", shard->shard_id);
+    // Free shard data which closes the environment and dbis
+    sdata_free(sd);
+    char fpath[PATH_MAX];
+    // Now delete the data and lock files
+    snprintf(fpath, PATH_MAX, "%s/%s", path, MDB_DATA_FILE);
+    unlink(fpath);
+    snprintf(fpath, PATH_MAX, "%s/%s", path, MDB_LOCK_FILE);
+    unlink(fpath);
+    // Remove data folder for this shard_data
+    rmdir(path);
+}
+
