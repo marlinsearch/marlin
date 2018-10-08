@@ -99,7 +99,6 @@ static char *create_index(h2o_req_t *req, void *data) {
     struct app *a = (struct app *) data;
     json_error_t error;
     json_t *j = json_loadb(req->entity.base, req->entity.len, 0, &error);
-    M_DBG("create index %s %s", req->entity.base, error.text);
     if (j) {
         struct index *in = create_index_from_json(a, j);
         if (!in) goto jerror;
@@ -174,10 +173,20 @@ void app_free(struct app *a) {
 }
 
 void app_delete(struct app *a) {
+    // Save the app path
     char path[PATH_MAX];
     snprintf(path, sizeof(path), "%s/%s", marlin->db_path, a->name);
-    // TODO: Actually delete app and its indexes if any
+    // and indexes file path
+    char indexes_path[PATH_MAX];
+    snprintf(indexes_path, sizeof(path), "%s/%s/%s", marlin->db_path, a->name, INDEXES_FILE);
+    // Delete all indexes
+    for (int i=0; i<kv_size(a->indexes); i++) {
+        index_delete(kv_A(a->indexes, i));
+    }
+    kv_size(a->indexes) = 0;
+    // Free the app, which destroys the indexes kvec and handles the rest of the free
     app_free(a);
+    unlink(indexes_path);
     rmdir(path);
 }
 

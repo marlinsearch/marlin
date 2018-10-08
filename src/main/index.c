@@ -196,6 +196,7 @@ static void index_save_info(struct index *in) {
         fprintf(fp, "%s", jstr);
         free(jstr);
         fclose(fp);
+        json_decref(j);
     } else {
         M_ERR("Failed to store index info for %s/%s", in->app->name, in->name);
     }
@@ -550,8 +551,71 @@ struct index *index_new(const char *name, struct app *a, int num_shards) {
     return in;
 }
 
-void index_free(struct index *in) {
-    setup_index_handlers(in, in->app->appid, in->app->apikey, false);
-    flakeid_ctx_destroy(in->fctx);
+static void index_destroy_threadpool(struct index *in) {
+    WRLOCK(&in->wpool_lock);
+    if (in->wpool) {
+        M_INFO("Destroying threadpool for index %s", in->name);
+        // TODO: Free threadpool jobs if any
+        threadpool_destroy(in->wpool, 0);
+        in->wpool = NULL;
+    }
+    UNLOCK(&in->wpool_lock);
 }
+
+void index_free(struct index *in) {
+    // Deregister handlers for this app
+    setup_index_handlers(in, in->app->appid, in->app->apikey, false);
+    // Destroy the threadpool if running
+    index_destroy_threadpool(in);
+    // Remove flake id context
+    flakeid_ctx_destroy(in->fctx);
+    // Free all the shards
+    for (int i = 0; i < in->num_shards; i++) {
+        struct shard *s = kv_A(in->shards, i);
+        shard_free(s);
+    }
+    kv_destroy(in->shards);
+    if (in->mapping) {
+        mapping_free(in->mapping);
+    }
+    free(in);
+}
+
+void index_clear(struct index *in) {
+    index_destroy_threadpool(in);
+    // Just clear all the shards after destroying the threadpool
+    for (int i = 0; i < in->num_shards; i++) {
+        struct shard *s = kv_A(in->shards, i);
+        shard_clear(s);
+    }
+}
+
+void index_delete(struct index *in) {
+    index_destroy_threadpool(in);
+    // Just clear all the shards after destroying the threadpool
+    for (int i = 0; i < in->num_shards; i++) {
+        struct shard *s = kv_A(in->shards, i);
+        shard_delete(s);
+    }
+    // set num_shards to 0.  We already deleted it, not need to free it
+    in->num_shards = 0;
+    mapping_delete(in->mapping);
+    in->mapping = NULL;
+    // Delete the index file
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, in->app->name, 
+                                 in->name, INDEX_FILE);
+    unlink(path);
+    // Delete the settings file
+    snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, in->app->name, 
+                                 in->name, SETTINGS_FILE);
+    unlink(path);
+    snprintf(path, sizeof(path), "%s/%s/%s", marlin->db_path, in->app->name, 
+                                 in->name);
+    // Delete the index folder
+    rmdir(path);
+    // Finally free the index itself
+    index_free(in);
+}
+
 

@@ -24,6 +24,8 @@
 #define MAPPING_FILE    "mapping.json"
 #define SHARD_FILE      "shard.json"
 #define SETTINGS_FILE   "settings.json"
+#define MDB_DATA_FILE   "data.mdb"
+#define MDB_LOCK_FILE   "lock.mdb"
 
 // Settings
 #define APPID_SIZE      8

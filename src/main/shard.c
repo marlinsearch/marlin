@@ -26,3 +26,32 @@ struct shard *shard_new(struct index *in, uint16_t shard_id) {
 
     return s;
 }
+
+
+void shard_free(struct shard *s) {
+    // Free shard data
+    if (s->sdata) {
+        sdata_free(s->sdata);
+    }
+    free(s);
+}
+
+void shard_clear(struct shard *s) {
+    // Clear the shard data
+    sdata_clear(s->sdata);
+}
+
+void shard_delete(struct shard *s) {
+    // FIrst delete the shard data
+    sdata_delete(s->sdata);
+    s->sdata = NULL;
+    // Form the shard path, we need this to delete
+    struct index *in = s->index;
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d", marlin->db_path, 
+             in->app->name, in->name, "s", s->shard_id);
+    // Free the shard
+    shard_free(s);
+    rmdir(path);
+}
+

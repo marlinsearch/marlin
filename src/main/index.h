@@ -73,5 +73,7 @@ struct index {
 
 struct index *index_new(const char *name, struct app *a, int num_shards);
 void index_free(struct index *in);
+void index_clear(struct index *in);
+void index_delete(struct index *in);
 
 #endif

@@ -24,6 +24,7 @@ cfg_url = url + index + "/settings"
 key_url = url + "keys"
 master_app_id = "abcdefgh"
 master_api_key = "12345678901234567890123456789012"
+test_app_id = "aaaaaaaa"
 
 
 def start_marlin():
@@ -72,6 +73,12 @@ class TestBase(unittest.TestCase):
                     'Content-Type':'application/json'}
         return headers
 
+    def post_any_status(self, url, data):
+        headers = self.get_headers()
+        r = requests.post(url, data=json.dumps(data), headers=headers, verify=False)
+        response = r.json()
+        return response
+
     def post(self, url, data, statuscode=200):
         headers = self.get_headers()
         r = requests.post(url, data=json.dumps(data), headers=headers, verify=False)
@@ -107,7 +114,18 @@ class TestBase(unittest.TestCase):
         response = r.json()
         return response
 
+    def setup_test_app(self):
+        self.use_app_key(master_app_id, master_api_key)
+        apps_url = url + 'applications'
+        app = {'name' : 'appfortests', 'appId': 'aaaaaaaa',
+                'apiKey': '12345678901234567890123456789012'}
+        r = self.post_any_status(apps_url, app)
 
+    def delete_test_app(self):
+        self.use_app_key(master_app_id, master_api_key)
+        apps_url = url + 'applications'
+        test_app_url = apps_url + '/appfortests'
+        r = self.delete(test_app_url)
 
 class TestPing(TestBase):
     def test_a_ping(self):
@@ -153,14 +171,53 @@ class TestApp(TestBase):
         app['appId'] = r['appId']
         self.post(apps_url, app, 400)
         # try to get app
-        apps_url = apps_url + '/testapp'
-        r2 = self.get(apps_url)
+        testapp_url = apps_url + '/testapp'
+        r2 = self.get(testapp_url)
         self.assertTrue(r['name'] == r2['name'])
         self.assertTrue(r['apiKey'] == r2['apiKey'])
         self.assertTrue(r['appId'] == r2['appId'])
         # delete app
-        r = self.delete(apps_url)
-        r2 = self.get(apps_url, 403)
+        r = self.delete(testapp_url)
+        r2 = self.get(testapp_url, 403)
+
+class TestIndex(TestBase):
+    def setUp(self):
+        # Create the test app and use test app key
+        self.setup_test_app()
+        self.use_app_key(test_app_id, master_api_key)
+        super(TestIndex, self).setUp()
+
+    def test_a_create_index(self):
+        indexes_url = url + 'indexes'
+        index = {'name' : 'testindex'}
+        r = self.post(indexes_url, index)
+        r = self.get(indexes_url)
+        # make sure we get a list of indexes
+        self.assertTrue(isinstance(r, list))
+        # See if the index we added now is present
+        present = False
+        for index in r:
+            if index['name'] == 'testindex':
+                present = True
+        self.assertTrue(present)
+        self.delete_test_app()
+
+    def test_a_create_multishard_index(self):
+        indexes_url = url + 'indexes'
+        index = {'name' : 'testindex', 'numShards': 5}
+        r = self.post(indexes_url, index)
+        r = self.get(indexes_url)
+        # make sure we get a list of indexes
+        self.assertTrue(isinstance(r, list))
+        # See if the index we added now is present
+        present = False
+        for index in r:
+            if index['name'] == 'testindex':
+                present = True
+        self.assertTrue(present)
+        self.delete_test_app()
+
+        # TODO: Add test to delete an index next
 
 if __name__ == '__main__':
     print "Starting tests .."
@@ -179,6 +236,11 @@ if __name__ == '__main__':
 
     # App tests
     suite = unittest.TestLoader().loadTestsFromTestCase(TestApp)
+    r = unittest.TextTestRunner(verbosity=5).run(suite)
+    fail = fail + len(r.failures)
+
+    # Index tests
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestIndex)
     r = unittest.TextTestRunner(verbosity=5).run(suite)
     fail = fail + len(r.failures)
 

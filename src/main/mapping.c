@@ -362,7 +362,7 @@ static void mapping_load(struct mapping *m) {
     json_error_t error;
     json_t *j = json_load_file(path, 0, &error);
     if (!j) {
-        M_DBG("Failed to mapping, not created yet ?");
+        M_DBG("Failed to load mapping, not created yet ?");
         return;
     } 
     // Load full schema
@@ -592,6 +592,19 @@ void mapping_free(struct mapping *m) {
         schema_free(m->index_schema);
     }
     reset_field_kv(m, false);
+    free(m);
+}
+
+void mapping_delete(struct mapping *m) {
+    // Get the mapping file path
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, m->index->app->name,
+                                 m->index->name, MAPPING_FILE);
+
+    // Free the mapping
+    mapping_free(m);
+    // Delete the mapping file
+    unlink(path);
 }
 
 struct mapping* mapping_new(struct index *in) {
