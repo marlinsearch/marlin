@@ -68,7 +68,6 @@ struct index {
     threadpool_t *wpool;
     pthread_rwlock_t wpool_lock;
     uint16_t job_count;
-
 };
 
 struct index *index_new(const char *name, struct app *a, int num_shards);

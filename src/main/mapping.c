@@ -54,7 +54,6 @@ static void schema_free(struct schema *s) {
         schema_free(s->next);
     }
     free(s);
-    s = NULL;
 }
 
 static void schema_reset(struct schema *s) {
@@ -101,7 +100,6 @@ static void schema_to_json(const struct schema *s, json_t *j) {
 static void json_to_schema(json_t *j, struct schema *rs) {
     const char *key;
     json_t *value;
-    json_t *temp;
     json_object_foreach(j, key, value) {
         struct schema *c = schema_new();
         // name
@@ -109,7 +107,7 @@ static void json_to_schema(json_t *j, struct schema *rs) {
         // type
         c->type = typestr_to_type(json_string_value(json_object_get(value, J_TYPE)));
         // is_indexed
-        temp = json_object_get(value, J_IS_INDEXED);
+        json_t *temp = json_object_get(value, J_IS_INDEXED);
         if (temp && json_is_boolean(temp)) {
             c->is_indexed = true;
         }

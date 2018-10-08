@@ -139,9 +139,8 @@ static int api_handle_cb(h2o_req_t *req, struct url_cbdata *cbdata) {
 
 static char * strnstr(const char *s, const char *find, size_t slen) {
     char c, sc;
-    size_t len;
     if ((c = *find++) != '\0') {
-        len = strlen(find);
+        size_t len = strlen(find);
         do {
             do {
                 if ((sc = *s++) == '\0' || slen-- < 1)

@@ -24,10 +24,12 @@ void random_str(char *s, const int len) {
             }
             s[len] = 0;
             free(rnd);
+            fclose(f);
             return;
         } else {
             free(rnd);
         }
+        fclose(f);
     }
 
     time_t t;
