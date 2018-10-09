@@ -31,3 +31,4 @@ ignore:
   - "src/utils/cfarmhash.c"
   - "src/utils/flakeid.c"
   - "src/utils/lz4.c"
+  - "src/utils/threadpool.c"
