@@ -44,7 +44,7 @@ static char *index_list_to_json(struct app *a) {
     return resp;
 }
 
-static char *list_indexes(h2o_req_t *req, void *data) {
+static char *list_indexes_handler(h2o_req_t *req, void *data) {
     struct app *a = (struct app *) data;
     return index_list_to_json(a);
 }
@@ -95,7 +95,7 @@ void app_save_indexes(struct app *a) {
     fclose(f);
 }
 
-static char *create_index(h2o_req_t *req, void *data) {
+static char *create_index_handler(h2o_req_t *req, void *data) {
     struct app *a = (struct app *) data;
     json_error_t error;
     json_t *j = json_loadb(req->entity.base, req->entity.len, 0, &error);
@@ -130,6 +130,18 @@ static void app_load_indexes(struct app *c) {
     }
 }
 
+/* Deletes an index within an app and updates the indexes file */
+void app_delete_index(struct app *a, struct index *in) {
+    for (int i=0; i < kv_size(marlin->apps); i++) {
+        if (kv_A(a->indexes, i) == in) {
+            kv_del(struct index *, a->indexes, i);
+            index_delete(in);
+            break;
+        }
+    }
+    app_save_indexes(a);
+}
+
 /* Creates a new app or loads an existing app */
 struct app *app_new(const char *name, const char *appid, const char *apikey) {
     struct app *a = calloc(1, sizeof(struct app));
@@ -144,9 +156,9 @@ struct app *app_new(const char *name, const char *appid, const char *apikey) {
  
     // Register app api handlers
     register_api_callback(a->appid, a->apikey, "POST", 
-                          URL_INDEXES, url_cbdata_new(create_index, a));
+                          URL_INDEXES, url_cbdata_new(create_index_handler, a));
     register_api_callback(a->appid, a->apikey, "GET", 
-                          URL_INDEXES, url_cbdata_new(list_indexes, a));
+                          URL_INDEXES, url_cbdata_new(list_indexes_handler, a));
  
     kv_init(a->indexes);
     app_setup_timeouts(a);

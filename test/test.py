@@ -228,7 +228,7 @@ class TestIndex(TestBase):
         self.assertTrue(present)
         self.delete_test_app()
 
-    def test_a_create_multishard_index(self):
+    def test_b_create_multishard_index(self):
         index = {'name' : test_index_name, 'numShards': 5}
         r = self.post(indexes_url, index)
         r = self.get(indexes_url)
@@ -242,8 +242,30 @@ class TestIndex(TestBase):
         self.assertTrue(present)
         self.delete_test_app()
 
-        # TODO: Add test to delete an index next
-
+    def test_c_delete_index(self):
+        # first create the app
+        index = {'name' : test_index_name, 'numShards': 5}
+        r = self.post(indexes_url, index)
+        r = self.get(indexes_url)
+        # make sure we get a list of indexes
+        self.assertTrue(isinstance(r, list))
+        # See if the index we added now is present
+        present = False
+        for index in r:
+            if index['name'] == test_index_name:
+                present = True
+        self.assertTrue(present)
+        r = self.delete(indexes_url + '/' + test_index_name)
+        r = self.get(indexes_url)
+        # make sure we get a list of indexes
+        self.assertTrue(isinstance(r, list))
+        # See if the index we added now is present
+        present = False
+        for index in r:
+            if index['name'] == test_index_name:
+                present = True
+        self.assertFalse(present)
+ 
 class TestIndexSettings(TestBase):
     def setUp(self):
         # Create the test app and use test app key

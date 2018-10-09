@@ -18,10 +18,11 @@ struct api_path {
     char *(*api_cb)(h2o_req_t *req, void *data);
 };
 
+/* Per thread data while adding objects */
 struct add_obj_tdata {
     struct worker *tdata;
     struct index *index;
-    json_t *sh_j;
+    json_t *sh_j; // Json object / array of objects for a shard
     int shard_idx;
 };
 
@@ -46,6 +47,8 @@ void index_worker_add_objects(struct index *in, json_t **sh_j) {
             sh_add[i].shard_idx = i;
             threadpool_add(index_pool, worker_add_process, &sh_add[i], 0);
         } else {
+            // It is an empty json array, which needs to be freed
+            json_decref(sh_add[i].sh_j);
             worker.pending--;
         }
     }
@@ -395,6 +398,16 @@ static char *index_mapping_callback(h2o_req_t *req, void *data) {
     return response;
 }
 
+/* Deletes an index.  THis actually informs the app containing the index
+ * to perform the deletion.  This lets the app do its bookeeping. This 
+ * handler is here and not in app as delete can be invoked by user keys
+ * with delete permission, which is enforced here */
+static char *index_delete_callback(h2o_req_t *req, void *data) {
+    struct index *in = data;
+    app_delete_index(in->app, in);
+    return strdup(J_SUCCESS);
+}
+
 static void index_load_settings(struct index *in) {
     char path[PATH_MAX];
     snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, in->app->name, 
@@ -419,6 +432,8 @@ const struct api_path apipaths[] = {
     {"GET", URL_INFO, KA_QUERY|KA_BROWSE, index_info_callback},
     // Mapping
     {"GET", URL_MAPPING, KA_G_CONFIG, index_mapping_callback},
+    // Delete index
+    {"DELETE", NULL, KA_DELETE, index_delete_callback},
     // Done here
     {"", "", KA_NONE, NULL}
     /*
