@@ -57,7 +57,7 @@ test: testsetup
 	@  (cd test && python test.py)
 
 coverage: testsetup debug
-	@  (cd build-debug && make marlin_coverage)
+	@  (cd build-debug && cp ../test/test.json . && make marlin_coverage)
 
 testlive:
 	@  (cd test && python test.py live)
