@@ -25,6 +25,7 @@ test_app_id = "aaaaaaaa"
 test_index_url = indexes_url + '/' + test_index_name
 test_index_fields = ["str", "strlist", "facet", "facetlist", "spell", "id", "num", "numlist", "bool"]
 test_facet_fields = ["facet", "facetlist", "facetonly"]
+json_data = {}
 
 
 def start_marlin():
@@ -130,6 +131,14 @@ class TestBase(unittest.TestCase):
         apps_url = url + 'applications'
         test_app_url = apps_url + '/appfortests'
         r = self.delete(test_app_url)
+
+    def ensure_no_jobs_on_index(self, indexname):
+        info_url = indexes_url + '/' + indexname + '/info'
+        while True:
+            r = self.get(info_url)
+            if (r['numJobs'] == 0):
+                break
+            time.sleep(1/10)
 
 class TestPing(TestBase):
     def test_a_ping(self):
@@ -267,6 +276,49 @@ class TestIndexSettings(TestBase):
         self.assertTrue(r['facetFields'] == test_facet_fields[0:2])
         self.assertTrue(r['indexedFields'] == test_index_fields[0:2])
         self.delete_test_app()
+    #TODO: Add other settings as and when added
+
+class TestIndexObjects(TestBase):
+    def setUp(self):
+        # Create the test app and use test app key
+        self.setup_test_app()
+        self.use_app_key(test_app_id, master_api_key)
+        self.setup_test_index()
+        super(TestIndexObjects, self).setUp()
+
+    def test_a_loadobjects(self):
+        #make sure mapping is empty
+        r = self.get(test_index_url + '/mapping')
+        self.assertFalse(r['readyToIndex'])
+        self.assertIsNone(r['indexSchema'])
+        self.assertIsNone(r['fullSchema'])
+        # Add objects
+        r = self.post(test_index_url, json_data['data'][0:25])
+        self.ensure_no_jobs_on_index(test_index_name)
+        r = self.get(test_index_url + '/mapping')
+        self.assertFalse(r['readyToIndex'])
+        self.assertIsNone(r['indexSchema'])
+        self.assertIsNotNone(r['fullSchema'])
+        self.delete_test_app()
+
+    def test_b_cfg_loadobjects(self):
+        #make sure mapping is empty
+        r = self.get(test_index_url + '/mapping')
+        self.assertFalse(r['readyToIndex'])
+        self.assertIsNone(r['indexSchema'])
+        self.assertIsNone(r['fullSchema'])
+        # configure index and facet fields
+        settings_url = test_index_url + '/settings'
+        settings = {'indexedFields': test_index_fields, "facetFields": test_facet_fields}
+        self.post(settings_url, settings)
+        # Add objects
+        r = self.post(test_index_url, json_data['data'][0:25])
+        self.ensure_no_jobs_on_index(test_index_name)
+        r = self.get(test_index_url + '/mapping')
+        self.assertTrue(r['readyToIndex'])
+        self.assertIsNotNone(r['indexSchema'])
+        self.assertIsNotNone(r['fullSchema'])
+        self.delete_test_app()
 
 
 if __name__ == '__main__':
@@ -276,7 +328,11 @@ if __name__ == '__main__':
         stop_marlin()
         start_marlin()
  
-
+    with open("./test.json") as f:
+        j = f.read()
+        js = json.loads(j)
+        json_data = js
+ 
     fail = 0
 
     # Ping test
@@ -299,6 +355,10 @@ if __name__ == '__main__':
     r = unittest.TextTestRunner(verbosity=5).run(suite)
     fail = fail + len(r.failures)
 
+    # Index objects tests
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestIndexObjects)
+    r = unittest.TextTestRunner(verbosity=5).run(suite)
+    fail = fail + len(r.failures)
 
 
     if not live:

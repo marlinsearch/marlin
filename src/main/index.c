@@ -389,6 +389,12 @@ static char *index_info_callback(h2o_req_t *req, void *data) {
     return response;
 }
 
+static char *index_mapping_callback(h2o_req_t *req, void *data) {
+    struct index *in = data;
+    char *response = mapping_to_json_str(in->mapping);
+    return response;
+}
+
 static void index_load_settings(struct index *in) {
     char path[PATH_MAX];
     snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, in->app->name, 
@@ -409,8 +415,10 @@ const struct api_path apipaths[] = {
     {"GET", URL_SETTINGS, KA_G_CONFIG, index_get_settings_callback},
     // Lets you add new objects to this index
     {"POST", NULL, KA_ADD, index_data_callback},
-    // Query get
+    // Index info
     {"GET", URL_INFO, KA_QUERY|KA_BROWSE, index_info_callback},
+    // Mapping
+    {"GET", URL_MAPPING, KA_G_CONFIG, index_mapping_callback},
     // Done here
     {"", "", KA_NONE, NULL}
     /*
@@ -563,6 +571,15 @@ static void index_destroy_threadpool(struct index *in) {
     UNLOCK(&in->wpool_lock);
 }
 
+static void free_kvec_strings(void *kv) {
+    kvec_t(char *) *fields = kv;
+    while (kv_size(*fields) > 0) {
+        char *f = kv_pop(*fields);
+        free(f);
+    }
+    kv_destroy(*fields);
+}
+
 void index_free(struct index *in) {
     // Deregister handlers for this app
     setup_index_handlers(in, in->app->appid, in->app->apikey, false);
@@ -579,6 +596,8 @@ void index_free(struct index *in) {
     if (in->mapping) {
         mapping_free(in->mapping);
     }
+    free_kvec_strings(&in->cfg.index_fields);
+    free_kvec_strings(&in->cfg.facet_fields);
     free(in);
 }
 

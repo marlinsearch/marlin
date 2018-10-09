@@ -167,6 +167,7 @@ static struct schema *schema_find_field(struct schema *s, const char *name) {
         } 
         c = c->next;
     }
+
     if (!strstr(name, ".")) return NULL;
     // May be it is inside an object "aaa.bbb.ccc" ?
     char *namecopy = strdup(name);
@@ -216,7 +217,6 @@ static int schema_extract(struct schema *s, json_t *j, struct mapping *m) {
     const char *key;
     json_t *value;
     json_object_foreach(j, key, value) {
-        M_DBG("extract key %s", key);
         struct schema *child = find_field_under_schema(s, key);
         if (!child) {
             child = schema_new();
@@ -285,7 +285,7 @@ static int schema_extract(struct schema *s, json_t *j, struct mapping *m) {
     return updated;
 }
 
-static void mapping_save(const struct mapping *m) {
+char *mapping_to_json_str(const struct mapping *m) {
     json_t *jo = json_object();
 
     // Dump full schema
@@ -294,7 +294,7 @@ static void mapping_save(const struct mapping *m) {
         schema_to_json(m->full_schema->child, full_schema);
         json_object_set_new(jo, J_FULL_SCHEMA, full_schema);
     } else {
-        json_object_set_new(jo, J_FULL_SCHEMA, NULL);
+        json_object_set_new(jo, J_FULL_SCHEMA, json_null());
     }
 
     // Index schema
@@ -303,7 +303,7 @@ static void mapping_save(const struct mapping *m) {
         schema_to_json(m->index_schema->child, index_schema);
         json_object_set_new(jo, J_INDEX_SCHEMA, index_schema);
     } else {
-        json_object_set_new(jo, J_INDEX_SCHEMA, NULL);
+        json_object_set_new(jo, J_INDEX_SCHEMA, json_null());
     }
 
     json_object_set_new(jo, J_NUM_FIELDS, json_integer(m->num_fields));
@@ -336,21 +336,24 @@ static void mapping_save(const struct mapping *m) {
         json_array_append_new(jaf, jf);
     }
     json_object_set_new(jo, J_FACETS, jaf);
+    char *jstr = json_dumps(jo, JSON_PRESERVE_ORDER|JSON_INDENT(4));
+    json_decref(jo);
+    return jstr;
+}
 
+static void mapping_save(const struct mapping *m) {
+    char *jstr = mapping_to_json_str(m);
     char path[PATH_MAX];
     snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, m->index->app->name,
                                  m->index->name, MAPPING_FILE);
-
     FILE *fp = fopen(path, "w");
     if (fp) {
-        char *jstr = json_dumps(jo, JSON_PRESERVE_ORDER|JSON_INDENT(4));
         fprintf(fp, "%s", jstr);
         fclose(fp);
-        free(jstr);
     } else {
         M_ERR("Failed to save mapping file %s", path);
     }
-    json_decref(jo);
+    free(jstr);
 }
 
 static void mapping_load(struct mapping *m) {
