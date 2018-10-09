@@ -1,6 +1,0 @@
-ignore:
-  deps/.*
-  src/utils/base64.c
-  src/utils/cfarmhash.c
-  src/utils/flakeid.c
-  src/utils/lz4.c
