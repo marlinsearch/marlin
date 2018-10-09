@@ -520,6 +520,8 @@ static void reset_field_kv(struct mapping *m, bool init) {
  * just storage happens */
 bool mapping_apply_config(struct mapping *m) {
     M_DBG("Apply configuration for mapping");
+    // Make sure we have a full schema parsed and ready before starting to apply config
+    if (!m->full_schema) return false;
     // First clear out existing index_schema and all field vectors
     if (m->index_schema) {
         schema_free(m->index_schema);

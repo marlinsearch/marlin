@@ -353,6 +353,7 @@ static char *index_set_settings_callback(h2o_req_t *req, void *data) {
     struct index *in = (struct index *) data;
     json_error_t error;
     json_t *j = json_loadb(req->entity.base, req->entity.len, 0, &error);
+
     if (j && json_is_object(j)) {
         int changed = 0;
         if ((changed = index_load_json_settings(in, j)) < 0) {

@@ -1,4 +1,4 @@
-# TODO : SPLIT THIS INTO MULTIPLE FILES
+# TODO : REWRITE this mess. SPLIT THIS INTO MULTIPLE FILES
 import sys
 import json
 import urllib2
@@ -17,14 +17,14 @@ ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
 url = "http://localhost:9002/1/"
-index = "indexes/test"
-index_url = url + index 
-query_url = url + index + "/query"
-cfg_url = url + index + "/settings"
-key_url = url + "keys"
+indexes_url = url + 'indexes'
+test_index_name = 'testindex'
 master_app_id = "abcdefgh"
 master_api_key = "12345678901234567890123456789012"
 test_app_id = "aaaaaaaa"
+test_index_url = indexes_url + '/' + test_index_name
+test_index_fields = ["str", "strlist", "facet", "facetlist", "spell", "id", "num", "numlist", "bool"]
+test_facet_fields = ["facet", "facetlist", "facetonly"]
 
 
 def start_marlin():
@@ -121,6 +121,10 @@ class TestBase(unittest.TestCase):
                 'apiKey': '12345678901234567890123456789012'}
         r = self.post_any_status(apps_url, app)
 
+    def setup_test_index(self):
+        index = {'name' : test_index_name, 'numShards': 5}
+        r = self.post_any_status(indexes_url, index)
+ 
     def delete_test_app(self):
         self.use_app_key(master_app_id, master_api_key)
         apps_url = url + 'applications'
@@ -202,8 +206,7 @@ class TestIndex(TestBase):
         super(TestIndex, self).setUp()
 
     def test_a_create_index(self):
-        indexes_url = url + 'indexes'
-        index = {'name' : 'testindex'}
+        index = {'name' : test_index_name}
         r = self.post(indexes_url, index)
         r = self.get(indexes_url)
         # make sure we get a list of indexes
@@ -211,14 +214,13 @@ class TestIndex(TestBase):
         # See if the index we added now is present
         present = False
         for index in r:
-            if index['name'] == 'testindex':
+            if index['name'] == test_index_name:
                 present = True
         self.assertTrue(present)
         self.delete_test_app()
 
     def test_a_create_multishard_index(self):
-        indexes_url = url + 'indexes'
-        index = {'name' : 'testindex', 'numShards': 5}
+        index = {'name' : test_index_name, 'numShards': 5}
         r = self.post(indexes_url, index)
         r = self.get(indexes_url)
         # make sure we get a list of indexes
@@ -226,12 +228,46 @@ class TestIndex(TestBase):
         # See if the index we added now is present
         present = False
         for index in r:
-            if index['name'] == 'testindex':
+            if index['name'] == test_index_name:
                 present = True
         self.assertTrue(present)
         self.delete_test_app()
 
         # TODO: Add test to delete an index next
+
+class TestIndexSettings(TestBase):
+    def setUp(self):
+        # Create the test app and use test app key
+        self.setup_test_app()
+        self.use_app_key(test_app_id, master_api_key)
+        self.setup_test_index()
+        super(TestIndexSettings, self).setUp()
+
+    def test_a_invalid_settings(self):
+        settings_url = test_index_url + '/settings'
+        settings = {'indexedFields': "abc", "facetFields": test_facet_fields}
+        self.post(settings_url, settings, 400)
+        settings = {'indexedFields': test_index_fields, "facetFields": 234}
+        self.post(settings_url, settings, 400)
+
+    def test_b_valid_settings(self):
+        settings_url = test_index_url + '/settings'
+        settings = {'indexedFields': test_index_fields, "facetFields": test_facet_fields}
+        self.post(settings_url, settings)
+        r = self.get(settings_url)
+        self.assertTrue('indexedFields' in r)
+        self.assertTrue('facetFields' in r)
+        self.assertTrue(r['facetFields'] == test_facet_fields)
+        self.assertTrue(r['indexedFields'] == test_index_fields)
+        settings = {'indexedFields': test_index_fields[0:2], "facetFields": test_facet_fields[0:2]}
+        self.post(settings_url, settings)
+        r = self.get(settings_url)
+        self.assertTrue('indexedFields' in r)
+        self.assertTrue('facetFields' in r)
+        self.assertTrue(r['facetFields'] == test_facet_fields[0:2])
+        self.assertTrue(r['indexedFields'] == test_index_fields[0:2])
+        self.delete_test_app()
+
 
 if __name__ == '__main__':
     print "Starting tests .."
@@ -257,6 +293,12 @@ if __name__ == '__main__':
     suite = unittest.TestLoader().loadTestsFromTestCase(TestIndex)
     r = unittest.TextTestRunner(verbosity=5).run(suite)
     fail = fail + len(r.failures)
+
+    # Index settings tests
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestIndexSettings)
+    r = unittest.TextTestRunner(verbosity=5).run(suite)
+    fail = fail + len(r.failures)
+
 
 
     if not live:
