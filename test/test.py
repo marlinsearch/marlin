@@ -142,7 +142,21 @@ class TestApp(TestBase):
         marlin_url = url + 'marlin'
         r = self.get(marlin_url)
         self.assertTrue('version' in r)
-
+        # Try a request without appId, apiKey in header
+        r = requests.get(marlin_url)
+        self.assertEqual(r.status_code, 400)
+        r = requests.get(marlin_url + 
+                '?x-marlin-application-id=%s&x-marlin-rest-api-key=%s'%(self.app_id, self.api_key)) 
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue('version' in r.json())
+        r = requests.get(marlin_url + 
+                '?x-marlin-rest-api-key=%s&x-marlin-application-id=%s'%(self.api_key, self.app_id)) 
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue('version' in r.json())
+        r = requests.get(marlin_url + 
+                '?x-marlin-rest-api-key=%s&x-marlin-application-id=%s'%(self.app_id, self.api_key)) 
+        self.assertEqual(r.status_code, 400)
+ 
     def test_b_invalid_app_key(self):
         self.use_app_key('lkjaslkdfj', master_api_key)
         marlin_url = url + 'marlin'
