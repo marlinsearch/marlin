@@ -13,7 +13,7 @@
 #ifdef VALGRIND_TEST
 #define MDB_ENV_SIZE        655360000
 #else
-#define MDB_ENV_SIZE        65536000000
+#define MDB_ENV_SIZE        6553600000
 #endif
 
 // File names
@@ -49,6 +49,7 @@
 #define J_APPID         "appId"
 #define J_CREATED       "created"
 #define J_UPDATED       "updated"
+#define J_NUM_INDEXES   "numIndexes"
 #define J_NUM_SHARDS    "numShards"
 #define J_NUM_JOBS      "numJobs"
 #define J_ID            "_id"
