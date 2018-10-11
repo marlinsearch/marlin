@@ -37,6 +37,7 @@ static char *index_list_to_json(struct app *a) {
         json_object_set_new(jo, J_NAME, json_string(in->name));
         json_object_set_new(jo, J_CREATED, json_integer(in->time_created));
         json_object_set_new(jo, J_UPDATED, json_integer(in->time_updated));
+        json_object_set_new(jo, J_NUM_SHARDS, json_integer(in->num_shards));
         json_array_append_new(ja, jo);
     }
     char *resp = json_dumps(ja, JSON_PRESERVE_ORDER|JSON_INDENT(4));

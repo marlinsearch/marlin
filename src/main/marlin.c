@@ -72,6 +72,7 @@ static char *app_list_to_json(void) {
         json_object_set_new(jo, J_NAME, json_string(a->name));
         json_object_set_new(jo, J_APPID, json_string(a->appid));
         json_object_set_new(jo, J_APIKEY, json_string(a->apikey));
+        json_object_set_new(jo, J_NUM_INDEXES, json_integer(kv_size(a->indexes)));
         json_array_append_new(ja, jo);
     }
     char *resp = json_dumps(ja, JSON_PRESERVE_ORDER|JSON_INDENT(4));
