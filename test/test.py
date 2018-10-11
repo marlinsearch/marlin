@@ -30,7 +30,10 @@ json_data = {}
 
 def start_marlin():
     print "starting ..."
-    os.system("cd .. && ./build-debug/main/marlin &")
+    if os.path.isfile("../build-debug/main/marlin"):
+        os.system("cd .. && ./build-debug/main/marlin &")
+    else:
+        os.system("cd .. && ./build/main/marlin &")
     time.sleep(5)
 
 def stop_marlin():
