@@ -9,6 +9,7 @@
 #include "utils.h"
 #include "url.h"
 #include "api.h"
+#include "analyzer.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 
@@ -233,6 +234,9 @@ void init_marlin(void) {
 
     // Create the db path if not present
     mkdir(marlin->db_path, 0775);
+
+    // Initializations
+    init_analyzers();
 
     // Setup applications, creating a default one if required
     kv_init(marlin->apps);
