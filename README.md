@@ -17,3 +17,5 @@ src/ - Marlin src
 deps/ - Dependencies
 
 misc/ - Miscellaneous stuff
+
+cmake/ - Code coverage
