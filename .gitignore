@@ -1,3 +1,4 @@
 build/
 build-debug/
 deps/
+test/test.json
