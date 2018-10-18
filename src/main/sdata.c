@@ -75,7 +75,7 @@ static void sdata_add_object(struct sdata *sd, json_t *j) {
     data.mv_data = compressed_data;
     mdb_put(sd->txn, sd->sid2json_dbi, &key, &data, 0);
 
-    // Update ID2SID
+    // Update ID2SID - Id to ShardId
     const char *id = json_string_value(json_object_get(j, J_ID));
     key.mv_data = (void *)id;
     key.mv_size = sd->custom_id? strlen(id) + 1 : 22;
@@ -91,7 +91,7 @@ static void sdata_add_object(struct sdata *sd, json_t *j) {
 /* Takes one more more objects for a shard and stores it in the shard datastore
  * A shard object id which will be the position of the object in the obj bitmap index is
  * assigned first. Any free ids due to deletions are used in advance to keep our obj
- * ids compact. The objects themselves are lz4 compressed and stored */
+ * ids compact. The objects themselves are zlib/lz4 compressed and stored */
 void sdata_add_objects(struct sdata *sd, json_t *j) {
     uint32_t oid = sd->lastoid;
     mdb_txn_begin(sd->env, NULL, 0, &sd->txn);
