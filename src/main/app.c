@@ -132,15 +132,16 @@ static void app_load_indexes(struct app *c) {
 }
 
 /* Deletes an index within an app and updates the indexes file */
-void app_delete_index(struct app *a, struct index *in) {
-    for (int i=0; i < kv_size(marlin->apps); i++) {
+bool app_delete_index(struct app *a, struct index *in) {
+    for (int i=0; i < kv_size(a->indexes); i++) {
         if (kv_A(a->indexes, i) == in) {
             kv_del(struct index *, a->indexes, i);
             index_delete(in);
-            break;
+            app_save_indexes(a);
+            return true;
         }
     }
-    app_save_indexes(a);
+    return false;
 }
 
 /* Creates a new app or loads an existing app */

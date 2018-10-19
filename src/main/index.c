@@ -402,10 +402,17 @@ static char *index_mapping_callback(h2o_req_t *req, void *data) {
  * to perform the deletion.  This lets the app do its bookeeping. This 
  * handler is here and not in app as delete can be invoked by user keys
  * with delete permission, which is enforced here */
+//TODO: This should be a delete job as requests may be in progress
 static char *index_delete_callback(h2o_req_t *req, void *data) {
     struct index *in = data;
-    app_delete_index(in->app, in);
-    return strdup(J_SUCCESS);
+    M_INFO("Deleting index %s", in->name);
+    if (app_delete_index(in->app, in)) {
+        return strdup(J_SUCCESS);
+    } else {
+        req->res.status = 400;
+        req->res.reason = "Bad Request";
+        return strdup(J_FAILURE);
+    }
 }
 
 static void index_load_settings(struct index *in) {
