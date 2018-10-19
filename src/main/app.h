@@ -33,6 +33,6 @@ struct app {
 struct app *app_new(const char *name, const char *appid, const char *apikey);
 void app_free(struct app *a);
 void app_delete(struct app *a);
-void app_delete_index(struct app *a, struct index *in);
+bool app_delete_index(struct app *a, struct index *in);
 
 #endif
