@@ -1,3 +1,11 @@
+/* Shard Data - Handles storing, retrieving and setting ID for the JSON objects.
+ *
+ * All objects are compressed by zlib before storing in lmdb.  An object shard id is assigned
+ * to every object sequentially as long as there are no deletions.  In case of deletions,
+ * deleted object ids are reused. This object SID is used to refer to the document all over
+ * Shard Index (sindex.c).  In the future, during reindexing, the document ids will be 
+ * reassigned for compaction in case of massive deletes */
+
 #include "sdata.h"
 #include "marlin.h"
 #include "common.h"
