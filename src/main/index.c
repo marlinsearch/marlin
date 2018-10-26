@@ -58,6 +58,12 @@ void index_worker_add_objects(struct index *in, json_t **sh_j) {
     free(sh_add);
 }
 
+static void update_shard_mappings(struct index *in) {
+    for (int i=0; i < kv_size(in->shards); i++) {
+        shard_set_mapping(kv_A(in->shards, i), in->mapping);
+    }
+}
+
 /* When objects are added to an index, they may have to be parsed for schema
  * discovery.  This happens only when the index_schema is not yet ready. */
 static void index_extract_object_mapping(struct index *in, json_t *j) {
@@ -80,6 +86,8 @@ static void index_extract_object_mapping(struct index *in, json_t *j) {
         // If index schema is ready, reindex existing objects before
         // adding new objects
         // TODO: Reindex existing shards
+        // Set mapping after reindexing
+        update_shard_mappings(in);
     }
 }
 
@@ -368,6 +376,9 @@ static char *index_set_settings_callback(h2o_req_t *req, void *data) {
         }
         json_decref(j);
         // TODO: Ask all shards to reindex existing data
+        // TODO: This should be a background job, settings callback should return
+        // immediately
+        update_shard_mappings(in);
         return strdup(J_SUCCESS);
     }
 jerror:
@@ -573,6 +584,9 @@ struct index *index_new(const char *name, struct app *a, int num_shards) {
     // For now it is just shards by id.. so load it
     for (int i = 0; i < in->num_shards; i++) {
         struct shard *s = shard_new(in, i);
+        if (in->mapping->ready_to_index) {
+            shard_set_mapping(s, in->mapping);
+        }
         kv_push(struct shard*, in->shards, s);
     }
 
