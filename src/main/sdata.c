@@ -120,41 +120,6 @@ void sdata_add_objects(struct sdata *sd, json_t *j) {
  
 }
 
-struct sdata *sdata_new(struct shard *shard) {
-    struct sdata *s = calloc(1, sizeof(struct sdata));
-    s->shard = shard;
-    s->lastoid = 1;
-    s->custom_id = false;
-    struct index *in = shard->index;
-
-    // Create path necessary to store shard data
-    char path[PATH_MAX];
-    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d/data", marlin->db_path, in->app->name, in->name, "s", shard->shard_id);
-    mkdir(path, 0775);
- 
-    // Initialize mdb access
-    mdb_env_create(&s->env);
-    int rc = mdb_env_set_mapsize(s->env, MDB_ENV_SIZE);
-    if (rc != 0) {
-        M_ERR("Error setting mapsize on [%s] %d", in->name, rc);
-    }
-
-    mdb_env_set_maxdbs(s->env, 2);
-    mdb_env_open(s->env, path, 0, 0664);
-    mdb_txn_begin(s->env, NULL, 0, &s->txn);
-    if (mdb_dbi_open(s->txn, DBI_SID2JSON, MDB_CREATE|MDB_INTEGERKEY, &s->sid2json_dbi) != 0) {
-        M_ERR("Failed to load %s dbi", DBI_SID2JSON);
-    } else {
-        load_sdata_info(s);
-    }
-    if (mdb_dbi_open(s->txn, DBI_ID2SID, MDB_CREATE, &s->id2sid_dbi) != 0) {
-        M_ERR("Failed to load %s dbi", DBI_ID2SID);
-    }
-    mdb_txn_commit(s->txn);
- 
-    return s;
-}
-
 void sdata_free(struct sdata *sd) {
     mdb_dbi_close(sd->env, sd->id2sid_dbi);
     mdb_dbi_close(sd->env, sd->sid2json_dbi);
@@ -193,5 +158,40 @@ void sdata_delete(struct sdata *sd) {
     unlink(fpath);
     // Remove data folder for this shard_data
     rmdir(path);
+}
+
+struct sdata *sdata_new(struct shard *shard) {
+    struct sdata *s = calloc(1, sizeof(struct sdata));
+    s->shard = shard;
+    s->lastoid = 1;
+    s->custom_id = false;
+    struct index *in = shard->index;
+
+    // Create path necessary to store shard data
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d/data", marlin->db_path, in->app->name, in->name, "s", shard->shard_id);
+    mkdir(path, 0775);
+ 
+    // Initialize mdb access
+    mdb_env_create(&s->env);
+    int rc = mdb_env_set_mapsize(s->env, MDB_ENV_SIZE);
+    if (rc != 0) {
+        M_ERR("Error setting mapsize on [%s] %d", in->name, rc);
+    }
+
+    mdb_env_set_maxdbs(s->env, 2);
+    mdb_env_open(s->env, path, 0, 0664);
+    mdb_txn_begin(s->env, NULL, 0, &s->txn);
+    if (mdb_dbi_open(s->txn, DBI_SID2JSON, MDB_CREATE|MDB_INTEGERKEY, &s->sid2json_dbi) != 0) {
+        M_ERR("Failed to load %s dbi", DBI_SID2JSON);
+    } else {
+        load_sdata_info(s);
+    }
+    if (mdb_dbi_open(s->txn, DBI_ID2SID, MDB_CREATE, &s->id2sid_dbi) != 0) {
+        M_ERR("Failed to load %s dbi", DBI_ID2SID);
+    }
+    mdb_txn_commit(s->txn);
+ 
+    return s;
 }
 
