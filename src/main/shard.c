@@ -5,6 +5,8 @@
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 
 void shard_set_mapping(struct shard *s, const struct mapping *m) {
+    // TODO: This should be a function in sindex, which reindexes
+    // based on the new mapping
     s->sindex->map = m;
 }
 
