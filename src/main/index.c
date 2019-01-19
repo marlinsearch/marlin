@@ -378,7 +378,9 @@ static char *index_set_settings_callback(h2o_req_t *req, void *data) {
         // TODO: Ask all shards to reindex existing data
         // TODO: This should be a background job, settings callback should return
         // immediately
-        update_shard_mappings(in);
+        if (in->mapping->ready_to_index) {
+            update_shard_mappings(in);
+        }
         return strdup(J_SUCCESS);
     }
 jerror:

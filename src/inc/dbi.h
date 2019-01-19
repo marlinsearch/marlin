@@ -10,6 +10,7 @@
 #define DBI_NUM             "num_dbi"
 #define DBI_FACETID2STR     "facetid2str_dbi"
 #define DBI_FACETID2BMAP    "facetid2bmap_dbi"
+#define DBI_BOOLID2BMAP     "boolid2bmap_dbi"
 
 #endif
 
