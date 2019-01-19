@@ -9,6 +9,7 @@
 
 KHASH_MAP_INIT_INT(FACETID2STR, char *) // Facet id to string mapping
 KHASH_MAP_INIT_INT64(FACETID2BMAP, struct mbmap *)
+KHASH_MAP_INIT_INT64(BOOLID2BMAP, struct mbmap *)
 
 // obj_data holds per object data to be written during indexing
 struct obj_data {
@@ -24,6 +25,7 @@ struct write_cache {
     // for a batch of objects to be written
     khash_t(FACETID2STR) *kh_facetid2str;
     khash_t(FACETID2BMAP) *kh_facetid2bmap;
+    khash_t(BOOLID2BMAP) *kh_boolid2bmap;
 
     // Per object index info
     struct obj_data od;
@@ -43,6 +45,7 @@ struct sindex {
 
     MDB_dbi facetid2str_dbi;    // Facet_id to facet string mapping
     MDB_dbi facetid2bmap_dbi;   // Facet id to bitmap of objs containing that id
+    MDB_dbi boolid2bmap_dbi;    // Bool id to bitmap of objs containing that bool
     MDB_dbi num_dbi[MAX_FIELDS];
 };
 

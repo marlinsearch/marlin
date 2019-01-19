@@ -26,7 +26,6 @@ static void update_facetid2bmap(struct sindex *si, uint32_t facet_id, int priori
         mbmap = kh_val(kh, k);
     } else {
         // Try to load it from lmdb
-        //printf("Loading fhid %"PRIu64" wid %u priority %d\n", fhid, facet_id, priority);
         mbmap = mbmap_new(fhid);
         mbmap_load(mbmap, si->txn, si->facetid2bmap_dbi);
         int ret = 0;
@@ -42,14 +41,44 @@ static void update_facetid2bmap(struct sindex *si, uint32_t facet_id, int priori
     }
 }
 
+// Store the object id in boolid bitmap.
+static inline void update_boolid2bmap(struct sindex *si, uint32_t bool_id, int priority, bool add) {
+    uint64_t bhid = IDPRIORITY(bool_id, priority);
+    struct mbmap *mbmap;
+    khash_t(BOOLID2BMAP) *kh = si->wc->kh_boolid2bmap;
+    khiter_t k = kh_get(BOOLID2BMAP, kh, bhid);
+    // If it exists, we already have the bmap
+    if (LIKELY(k != kh_end(kh))) {
+        mbmap = kh_val(kh, k);
+    } else {
+        // Try to load it from lmdb
+        mbmap = mbmap_new(bhid);
+        mbmap_load(mbmap, si->txn, si->boolid2bmap_dbi);
+        int ret = 0;
+        k = kh_put(BOOLID2BMAP, kh, bhid, &ret);
+        kh_value(kh, k) = mbmap;
+    }
+    if (add) {
+        // Add the objectid to the bmap
+        mbmap_add(mbmap, si->wc->od.oid, si->txn, si->boolid2bmap_dbi);
+    } else {
+        // Remove the objectid from the bmap
+        mbmap_remove(mbmap, si->wc->od.oid, si->txn, si->boolid2bmap_dbi);
+    }
+}
+
+
 
 static void si_write_start(struct sindex *si) {
     // Prepares the write cache
     si->wc = calloc(1, sizeof(struct write_cache));
 
+    // Setup all khashes
     si->wc->kh_facetid2bmap = kh_init(FACETID2BMAP);
     si->wc->kh_facetid2str = kh_init(FACETID2STR);
+    si->wc->kh_boolid2bmap = kh_init(BOOLID2BMAP);
 
+    // Setup per obj data
     struct obj_data *od = &si->wc->od;
 
     // Setup num_data to store numeric information for an object
@@ -90,6 +119,12 @@ static void store_facetid2str(struct sindex *si, uint32_t id, char *str) {
 static void si_write_end(struct sindex *si) {
 
     struct mbmap *mbmap;
+
+    // Store bool id to bmap mapping
+    kh_foreach_value(si->wc->kh_boolid2bmap, mbmap, {
+        store_id2mbmap(mbmap, si->boolid2bmap_dbi, si->txn);
+    });
+    kh_destroy(BOOLID2BMAP, si->wc->kh_boolid2bmap);
 
     // Store facet id to bmap mapping
     kh_foreach_value(si->wc->kh_facetid2bmap, mbmap, {
@@ -153,6 +188,10 @@ static inline void index_number(struct sindex *si, int priority, double d) {
     data.mv_size = sizeof(oid);
     data.mv_data = &oid;
     mdb_put(si->txn, si->num_dbi[priority], &key, &data, 0);
+}
+
+static void index_boolean(struct sindex *si, int priority, bool b) {
+    update_boolid2bmap(si, b, priority, true);
 }
 
 /**
@@ -255,6 +294,13 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
                     }
                     // TODO: Decide on how to store arrays in objdata and index
                 }
+            }
+            break;
+            case F_BOOLEAN: {
+                json_t *jb = json_object_get(j, s->fname);
+                if (!json_is_boolean(jb)) break;
+                // True and false are set in different bitmaps
+                index_boolean(si, s->i_priority, json_is_true(jb));
             }
             break;
             // For objects, recursively call with inner objects in both schema
@@ -399,6 +445,7 @@ struct sindex *sindex_new(struct shard *shard) {
     // Open all necessary dbis here
     mdb_dbi_open(si->txn, DBI_FACETID2STR, MDB_CREATE|MDB_INTEGERKEY, &si->facetid2str_dbi);
     mdb_dbi_open(si->txn, DBI_FACETID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->facetid2bmap_dbi);
+    mdb_dbi_open(si->txn, DBI_BOOLID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->boolid2bmap_dbi);
  
     mdb_txn_commit(si->txn);
     return si;
