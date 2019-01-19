@@ -343,6 +343,8 @@ class TestIndexObjects(TestBase):
         self.assertTrue(r['readyToIndex'])
         self.assertIsNotNone(r['indexSchema'])
         self.assertIsNotNone(r['fullSchema'])
+        r = self.post(test_index_url, json_data['data'][25:])
+        self.ensure_no_jobs_on_index(test_index_name)
         self.delete_test_app()
 
 
