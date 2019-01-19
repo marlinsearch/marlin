@@ -426,6 +426,16 @@ static char *index_delete_callback(h2o_req_t *req, void *data) {
     }
 }
 
+// TODO: This should be a clear job as requests may be in progress?
+static char *index_clear_callback(h2o_req_t *req, void *data) {
+    struct index *in = data;
+    for (int i = 0; i < in->num_shards; i++) {
+        struct shard *s = kv_A(in->shards, i);
+        shard_clear(s);
+    }
+    return strdup(J_SUCCESS);
+}
+
 static void index_load_settings(struct index *in) {
     char path[PATH_MAX];
     snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, in->app->name, 
@@ -452,6 +462,9 @@ const struct api_path apipaths[] = {
     {"GET", URL_MAPPING, KA_G_CONFIG, index_mapping_callback},
     // Delete index
     {"DELETE", NULL, KA_DELETE, index_delete_callback},
+    // Clear Index
+    {"POST", URL_CLEAR, KA_DELETE, index_clear_callback},
+    // Bulk
     // Done here
     {"", "", KA_NONE, NULL}
     /*

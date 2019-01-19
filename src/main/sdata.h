@@ -4,9 +4,6 @@
 #include <lmdb.h>
 #include "shard.h"
 
-#define DBI_SID2JSON    "sid2json_dbi"
-#define DBI_ID2SID      "id2sid_dbi"
-
 /* sdata holds the object data for a shard */
 struct sdata {
     struct shard *shard;
