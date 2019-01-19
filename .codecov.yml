@@ -28,7 +28,8 @@ comment:
 ignore:
   - "deps/.*"
   - "src/utils/base64.c"
-  - "src/utils/cfarmhash.c"
+  - "src/utils/farmhash-c.c"
   - "src/utils/flakeid.c"
   - "src/utils/lz4.c"
   - "src/utils/threadpool.c"
+  - "src/utils/c.c"
