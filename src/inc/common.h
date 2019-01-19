@@ -16,6 +16,11 @@
 #define MDB_ENV_SIZE        6553600000
 #endif
 
+#define IDPRIORITY(id, priority) ((uint64_t) id << 32 | priority << 16)
+
+// Maximum supported attributes?  // TODO: Too less ?
+#define MAX_FIELDS      0xFF
+
 // File names
 #define SETTINGS_PATH   "./settings.json"
 #define APPS_FILE       "apps.json"
@@ -53,7 +58,7 @@
 #define J_NUM_SHARDS    "numShards"
 #define J_NUM_JOBS      "numJobs"
 #define J_ID            "_id"
-#define J_SID           "_sid"
+#define J_OID           "_oid"
 #define J_TYPE          "type"
 #define J_PROPERTIES    "properties"
 #define J_FIELDID       "fieldId"

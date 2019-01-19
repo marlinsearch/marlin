@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <string.h>
 
 #define CUTOFF (1<<12)
 #define BCUTOFF (1<<12)/4

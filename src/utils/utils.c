@@ -4,7 +4,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include "utils.h"
-#include "cfarmhash.h"
+#include "farmhash-c.h"
 
 /* Generates a random string */
 // TODO: Rewrite using libcrypto
@@ -56,7 +56,7 @@ char *generate_objid(flakeid_ctx_t *fctx) {
 }
 
 int get_shard_routing_id(const char *key, int num_shards) {
-    uint64_t hash = cfarmhash(key, strlen(key));
+    uint64_t hash = farmhash(key, strlen(key));
     return hash % num_shards;
 }
 
