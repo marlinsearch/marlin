@@ -9,5 +9,6 @@
 #define URL_SETTINGS    "settings"
 #define URL_INFO        "info"
 #define URL_MAPPING     "mapping"
+#define URL_CLEAR       "clear"
 
 #endif

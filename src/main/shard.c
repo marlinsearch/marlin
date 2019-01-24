@@ -1,11 +1,45 @@
 #include "shard.h"
 #include "common.h"
 #include "marlin.h"
+#include "utils.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 
+static void shard_save_info(struct shard *s) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d/%s", marlin->db_path, 
+             s->index->app->name, s->index->name, "s", s->shard_id, SHARD_FILE);
+ 
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        M_ERR("Failed to save datastore index name");
+        return;
+    }
+    fprintf(f, "{\"%s\":\"%s\"}", J_NAME, s->idx_name);
+    fclose(f);
+}
+
+// Loads shard information, this gives the actual shard index file path
+static void shard_load_info(struct shard *s) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d/%s", marlin->db_path, 
+             s->index->app->name, s->index->name, "s", s->shard_id, SHARD_FILE);
+    json_t *json;
+    json_error_t error;
+    json = json_load_file(path, 0, &error);
+    if (json && json_is_object(json)) {
+        const char *name = json_string_value(json_object_get(json, J_NAME));
+        snprintf(s->idx_name, sizeof(s->idx_name), "%s", name);
+        json_decref(json);
+    }
+}
+
 void shard_set_mapping(struct shard *s, const struct mapping *m) {
-    s->sindex->map = m;
+    M_INFO("Shard mapping set");
+    // TODO: This should be a function in sindex, 
+    // Set current index for removal and create a new sindex and
+    // set mapping.
+    sindex_set_mapping(s->sindex, m);
 }
 
 /* Adds one or more objects to a shard */
@@ -14,6 +48,7 @@ void shard_add_objects(struct shard *s, json_t *j) {
     // the shard object id
     sdata_add_objects(s->sdata, j);
     // Then index the object data
+    sindex_add_objects(s->sindex, j);
 }
 
 void shard_free(struct shard *s) {
@@ -65,12 +100,19 @@ struct shard *shard_new(struct index *in, uint16_t shard_id) {
     snprintf(path, sizeof(path), "%s/%s/%s/%s_%d", marlin->db_path, 
              in->app->name, in->name, "s", shard_id);
     mkdir(path, 0775);
+    shard_load_info(s);
+    if (strlen(s->idx_name) == 0) {
+        char idx[16];
+        random_str(idx, 8);
+        snprintf(s->idx_name, sizeof(s->idx_name), "index_%s", idx);
+        // Save the newly assigned name
+        shard_save_info(s);
+    }
  
     // create / load shard data for this shard
     s->sdata = sdata_new(s);
     // Create / load shard search index for this shard
     s->sindex = sindex_new(s);
-
     return s;
 }
 

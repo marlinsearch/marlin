@@ -11,6 +11,7 @@
 #include "common.h"
 #include "lz4.h"
 #include "zlib.h"
+#include "dbi.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 
@@ -70,7 +71,7 @@ static void sdata_add_object(struct sdata *sd, json_t *j) {
     if (json_is_null(j)) return;
     // TODO: Handle free entries from free_bm, also read below note !
     uint32_t newoid = get_free_objid(sd);
-    json_object_set_new(j, J_SID, json_integer(newoid));
+    json_object_set_new(j, J_OID, json_integer(newoid));
     char *jdata = json_dumps(j, JSON_PRESERVE_ORDER|JSON_COMPACT);
     int compressed_len;
     char *compressed_data = jcompress(jdata, &compressed_len);
