@@ -22,7 +22,9 @@ uint32_t bmap_and_cardinality(const struct bmap *a, const struct bmap *b);
 struct bmap *convert_to_bitset_bmap(const struct bmap *f);
 struct bmap *bmap_duplicate(const struct bmap *b);
 uint32_t bmap_get_first(struct bmap *b);
-uint32_t bmap_get_dumplen(struct bmap *b);
+uint32_t bmap_get_dumplen(const struct bmap *b);
+void bmap_dump(const struct bmap *b, uint16_t *buf); // Dump to buf
+void bmap_load(struct bmap *b, const uint16_t *buf); // Load from buf
 
 struct oper {
     int count;

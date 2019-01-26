@@ -6,15 +6,16 @@
 #include "shard.h"
 #include "khash.h"
 #include "kvec.h"
+#include "dtrie.h"
 
 KHASH_MAP_INIT_INT(FACETID2STR, char *) // Facet id to string mapping
-KHASH_MAP_INIT_INT64(FACETID2BMAP, struct mbmap *)
-KHASH_MAP_INIT_INT64(BOOLID2BMAP, struct mbmap *)
+KHASH_MAP_INIT_INT64(WID2MBMAP, struct mbmap *) // Word id to mbmap
 
 // obj_data holds per object data to be written during indexing
 struct obj_data {
     uint32_t oid; // Object id of object currently being indexed
     double *num_data; // Numeric data for a given object, an array of size num_numbers
+    uint32_t twid[LEVLIMIT];
     kvec_t(uint32_t) *facet_data; // Facet ids for the object, an array of size num_facets
 };
 
@@ -24,8 +25,11 @@ struct write_cache {
     // Various hashmaps maintaining current write operation data
     // for a batch of objects to be written
     khash_t(FACETID2STR) *kh_facetid2str;
-    khash_t(FACETID2BMAP) *kh_facetid2bmap;
-    khash_t(BOOLID2BMAP) *kh_boolid2bmap;
+    khash_t(WID2MBMAP) *kh_facetid2bmap; // Facet ID to obj id bmap
+    khash_t(WID2MBMAP) *kh_boolid2bmap;   // Bool id to obj id bmap
+    khash_t(WID2MBMAP) *kh_wid2bmap;        // Word id to obj id bmap
+    khash_t(WID2MBMAP) *kh_twid2bmap;       // Top-Level word id to obj id bmap
+    khash_t(WID2MBMAP) *kh_twid2widbmap;    // Top-level word id to wid bmap
 
     // Per object index info
     struct obj_data od;
@@ -35,6 +39,9 @@ struct write_cache {
 struct sindex {
     struct shard *shard;
     const struct mapping *map;
+
+    // The trie holding all words
+    struct dtrie *trie;
 
     // Write cache
     struct write_cache *wc;
@@ -46,7 +53,15 @@ struct sindex {
     MDB_dbi facetid2str_dbi;    // Facet_id to facet string mapping
     MDB_dbi facetid2bmap_dbi;   // Facet id to bitmap of objs containing that id
     MDB_dbi boolid2bmap_dbi;    // Bool id to bitmap of objs containing that bool
+    MDB_dbi twid2widbmap_dbi;   // Top-level wid to bitmap of wids under the twid
+    MDB_dbi twid2bmap_dbi;      // Top-level wid to bitmap of objids under the twid
+    MDB_dbi wid2bmap_dbi;       // Word id to bitmap of objids containing that wid
     MDB_dbi num_dbi[MAX_FIELDS];
+};
+
+struct analyzer_data {
+    struct sindex *si;
+    int priority;
 };
 
 struct sindex *sindex_new(struct shard *s);

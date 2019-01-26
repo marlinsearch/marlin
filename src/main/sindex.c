@@ -6,8 +6,41 @@
 #include "dbi.h"
 #include "farmhash-c.h"
 #include "mbmap.h"
+#include "analyzer.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
+
+#define wid2bmap_add(dbi, kh, txn, keyid, vid, priority) {  \
+    uint64_t hid = IDPRIORITY(keyid, priority);             \
+    struct mbmap *map;                                      \
+    khiter_t k = kh_get(WID2MBMAP, kh, hid);                \
+    if (LIKELY(k != kh_end(kh))) {                          \
+        map = kh_val(kh, k);                              \
+    } else {                                                \
+        map = mbmap_new(hid);                            \
+        mbmap_load(map, txn, si->facetid2bmap_dbi);     \
+        int ret = 0;                                        \
+        k = kh_put(WID2MBMAP, kh, hid, &ret);              \
+        kh_value(kh, k) = map;                              \
+    }                                                       \
+    mbmap_add(map, vid, txn, dbi);                          \
+}
+
+#define wid2bmap_remove(dbi, kh, txn, keyid, vid, priority) {  \
+    uint64_t hid = IDPRIORITY(keyid, priority);             \
+    struct mbmap *map;                                      \
+    khiter_t k = kh_get(WID2MBMAP, kh, hid);                \
+    if (LIKELY(k != kh_end(kh))) {                          \
+        map = kh_val(kh, k);                              \
+    } else {                                                \
+        map = mbmap_new(hid);                            \
+        mbmap_load(map, txn, si->facetid2bmap_dbi);     \
+        int ret = 0;                                        \
+        k = kh_put(WID2MBMAP, kh, hid, &ret);              \
+        kh_value(kh, k) = map;                              \
+    }                                                       \
+    mbmap_remove(map, vid, txn, dbi);                       \
+}
 
 
 static int double_compare(const MDB_val *a, const MDB_val *b) {
@@ -15,69 +48,18 @@ static int double_compare(const MDB_val *a, const MDB_val *b) {
         *(double *)b->mv_data > *(double *)a->mv_data;
 }
 
-// Store the object id in fhid bitmap.
-static void update_facetid2bmap(struct sindex *si, uint32_t facet_id, int priority, bool add) {
-    uint64_t fhid = IDPRIORITY(facet_id, priority);
-    struct mbmap *mbmap;
-    khash_t(FACETID2BMAP) *kh = si->wc->kh_facetid2bmap;
-    khiter_t k = kh_get(FACETID2BMAP, kh, fhid);
-    // If it exists, we already have the bmap
-    if (LIKELY(k != kh_end(kh))) {
-        mbmap = kh_val(kh, k);
-    } else {
-        // Try to load it from lmdb
-        mbmap = mbmap_new(fhid);
-        mbmap_load(mbmap, si->txn, si->facetid2bmap_dbi);
-        int ret = 0;
-        k = kh_put(FACETID2BMAP, kh, fhid, &ret);
-        kh_value(kh, k) = mbmap;
-    }
-    if (add) {
-        // Add the objectid to the bmap
-        mbmap_add(mbmap, si->wc->od.oid, si->txn, si->facetid2bmap_dbi);
-    } else {
-        // Remove the objectid from the bmap
-        mbmap_remove(mbmap, si->wc->od.oid, si->txn, si->facetid2bmap_dbi);
-    }
-}
-
-// Store the object id in boolid bitmap.
-static inline void update_boolid2bmap(struct sindex *si, uint32_t bool_id, int priority, bool add) {
-    uint64_t bhid = IDPRIORITY(bool_id, priority);
-    struct mbmap *mbmap;
-    khash_t(BOOLID2BMAP) *kh = si->wc->kh_boolid2bmap;
-    khiter_t k = kh_get(BOOLID2BMAP, kh, bhid);
-    // If it exists, we already have the bmap
-    if (LIKELY(k != kh_end(kh))) {
-        mbmap = kh_val(kh, k);
-    } else {
-        // Try to load it from lmdb
-        mbmap = mbmap_new(bhid);
-        mbmap_load(mbmap, si->txn, si->boolid2bmap_dbi);
-        int ret = 0;
-        k = kh_put(BOOLID2BMAP, kh, bhid, &ret);
-        kh_value(kh, k) = mbmap;
-    }
-    if (add) {
-        // Add the objectid to the bmap
-        mbmap_add(mbmap, si->wc->od.oid, si->txn, si->boolid2bmap_dbi);
-    } else {
-        // Remove the objectid from the bmap
-        mbmap_remove(mbmap, si->wc->od.oid, si->txn, si->boolid2bmap_dbi);
-    }
-}
-
-
-
 static void si_write_start(struct sindex *si) {
     // Prepares the write cache
     si->wc = calloc(1, sizeof(struct write_cache));
 
     // Setup all khashes
-    si->wc->kh_facetid2bmap = kh_init(FACETID2BMAP);
     si->wc->kh_facetid2str = kh_init(FACETID2STR);
-    si->wc->kh_boolid2bmap = kh_init(BOOLID2BMAP);
-
+    si->wc->kh_boolid2bmap = kh_init(WID2MBMAP);
+    si->wc->kh_facetid2bmap = kh_init(WID2MBMAP);
+    si->wc->kh_wid2bmap = kh_init(WID2MBMAP);
+    si->wc->kh_twid2bmap = kh_init(WID2MBMAP);
+    si->wc->kh_twid2widbmap = kh_init(WID2MBMAP);
+ 
     // Setup per obj data
     struct obj_data *od = &si->wc->od;
 
@@ -91,6 +73,7 @@ static void si_write_start(struct sindex *si) {
         od->facet_data = calloc(si->map->num_facets, sizeof(kvec_t(uint32_t)));
     }
 
+    dtrie_write_start(si->trie);
     // Begin the write transaction
     mdb_txn_begin(si->env, NULL, 0, &si->txn);
 }
@@ -124,13 +107,31 @@ static void si_write_end(struct sindex *si) {
     kh_foreach_value(si->wc->kh_boolid2bmap, mbmap, {
         store_id2mbmap(mbmap, si->boolid2bmap_dbi, si->txn);
     });
-    kh_destroy(BOOLID2BMAP, si->wc->kh_boolid2bmap);
+    kh_destroy(WID2MBMAP, si->wc->kh_boolid2bmap);
 
     // Store facet id to bmap mapping
     kh_foreach_value(si->wc->kh_facetid2bmap, mbmap, {
         store_id2mbmap(mbmap, si->facetid2bmap_dbi, si->txn);
     });
-    kh_destroy(FACETID2BMAP, si->wc->kh_facetid2bmap);
+    kh_destroy(WID2MBMAP, si->wc->kh_facetid2bmap);
+
+    // Store twid to wid mapping
+    kh_foreach_value(si->wc->kh_twid2widbmap, mbmap, {
+        store_id2mbmap(mbmap, si->twid2widbmap_dbi, si->txn);
+    });
+    kh_destroy(WID2MBMAP, si->wc->kh_twid2widbmap);
+
+    // Store twid to objid mapping
+    kh_foreach_value(si->wc->kh_twid2bmap, mbmap, {
+        store_id2mbmap(mbmap, si->twid2bmap_dbi, si->txn);
+    });
+    kh_destroy(WID2MBMAP, si->wc->kh_twid2bmap);
+
+    // Store wid to objid mapping
+    kh_foreach_value(si->wc->kh_wid2bmap, mbmap, {
+        store_id2mbmap(mbmap, si->wid2bmap_dbi, si->txn);
+    });
+    kh_destroy(WID2MBMAP, si->wc->kh_wid2bmap);
 
     // Store facet id to string mappings
     uint32_t facet_id;
@@ -144,6 +145,7 @@ static void si_write_end(struct sindex *si) {
     });
     kh_destroy(FACETID2STR, si->wc->kh_facetid2str);
 
+    dtrie_write_end(si->trie, si->boolid2bmap_dbi, si->txn);
     // Commit write transaction
     mdb_txn_commit(si->txn);
 
@@ -190,8 +192,9 @@ static inline void index_number(struct sindex *si, int priority, double d) {
     mdb_put(si->txn, si->num_dbi[priority], &key, &data, 0);
 }
 
-static void index_boolean(struct sindex *si, int priority, bool b) {
-    update_boolid2bmap(si, b, priority, true);
+static inline void index_boolean(struct sindex *si, int priority, bool b) {
+    wid2bmap_add(si->boolid2bmap_dbi, si->wc->kh_boolid2bmap, si->txn, 
+                         b, si->wc->od.oid, priority);
 }
 
 /**
@@ -233,7 +236,55 @@ static inline void index_string_facet(struct sindex *si, const char *str, int pr
     // Store it in per obj data
     kv_push(uint32_t, od->facet_data[priority], facet_id);
     // Update facetid -> bitmap of all documents with this facet id
-    update_facetid2bmap(si, facet_id, priority, true);
+    wid2bmap_add(si->facetid2bmap_dbi, si->wc->kh_facetid2bmap, si->txn, 
+                         facet_id, od->oid, priority);
+}
+
+static void string_new_word_pos(word_pos_t *wp, void *data) {
+    struct analyzer_data *ad = data;
+    struct sindex *si = ad->si;
+    struct obj_data *od = &si->wc->od;
+    int p = ad->priority + 1;
+    int limit = wp->word.length >= LEVLIMIT ? LEVLIMIT : wp->word.length;
+
+    // Check if the word exists
+    uint32_t wid = dtrie_exists(si->trie, wp->word.chars, wp->word.length, od->twid);
+    if (wid == 0) {
+        // If it does not exist, insert it and update the top-level word ids
+        // mapping to include the newly added word id
+        wid = dtrie_insert(si->trie, wp->word.chars, wp->word.length, od->twid);
+        // Store top-level word id to word id mapping
+        for (int i = 0; i < limit; i++) {
+            wid2bmap_add(si->twid2widbmap_dbi, si->wc->kh_twid2widbmap, si->txn, 
+                         od->twid[i], wid, 0);
+            wid2bmap_add(si->twid2widbmap_dbi, si->wc->kh_twid2widbmap, si->txn, 
+                         od->twid[i], wid, p);
+        }
+    }
+
+    // Set the top-level wid to obj id mapping
+    for (int i = 0; i < limit; i++) {
+        wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2widbmap, si->txn, 
+                     od->twid[i], od->oid, 0);
+        wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2widbmap, si->txn, 
+                     od->twid[i], od->oid, p);
+    }
+
+    // Set the wid to obj id mapping
+    wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
+            wid, od->oid, 0);
+    wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
+            wid, od->oid, p);
+    // TODO: Index wid position
+}
+
+// TODO: better analyzer usage, configurable etc.,
+static void index_string(struct sindex *si, const char *str, int priority) {
+    struct analyzer_data ad;
+    ad.si = si;
+    ad.priority = priority;
+    struct analyzer *a = get_default_analyzer();
+    a->analyze_string_for_indexing(str, string_new_word_pos, &ad);
 }
 
 
@@ -254,6 +305,9 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
                 const char *str = json_string_value(js);
                 if (s->is_facet) {
                     index_string_facet(si, str, s->f_priority);
+                }
+                if (s->is_indexed) {
+                    index_string(si, str, s->f_priority);
                 }
             }
             break;
@@ -293,6 +347,7 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
                         index_number(si, s->i_priority, d);
                     }
                     // TODO: Decide on how to store arrays in objdata and index
+                    // Probably the same way we handle facets?
                 }
             }
             break;
@@ -332,8 +387,7 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
 
 
 /* Entry point to parse and index an object, this assumes that 
- * the write cache is ready 
- * */
+ * the write cache is ready */
 static void si_add_object(struct sindex *si, json_t *j) {
     // Get the oid from the object, this was previously set when
     // adding the object to sdata
@@ -348,10 +402,8 @@ static void si_add_object(struct sindex *si, json_t *j) {
     sindex_store_objdata(si);
 }
 
-/**
- * Adds one or more objects to the shard index.  This parses the input and updates
- * the various num / string / facet dbis.
- */
+/* Adds one or more objects to the shard index.  This parses the input and updates
+ * the various num / string / facet dbis. */
 void sindex_add_objects(struct sindex *si, json_t *j) {
     // Make sure we are ready to index these objects
     if (UNLIKELY((!j))) return;
@@ -446,6 +498,12 @@ struct sindex *sindex_new(struct shard *shard) {
     mdb_dbi_open(si->txn, DBI_FACETID2STR, MDB_CREATE|MDB_INTEGERKEY, &si->facetid2str_dbi);
     mdb_dbi_open(si->txn, DBI_FACETID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->facetid2bmap_dbi);
     mdb_dbi_open(si->txn, DBI_BOOLID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->boolid2bmap_dbi);
+    mdb_dbi_open(si->txn, DBI_TWID2WIDBMAP, MDB_CREATE|MDB_INTEGERKEY, &si->twid2widbmap_dbi);
+    mdb_dbi_open(si->txn, DBI_TWID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->twid2bmap_dbi);
+    mdb_dbi_open(si->txn, DBI_WID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->wid2bmap_dbi);
+
+    strcat(path, "/dtrie.db");
+    si->trie = dtrie_new(path, si->boolid2bmap_dbi, si->txn);
  
     mdb_txn_commit(si->txn);
     return si;

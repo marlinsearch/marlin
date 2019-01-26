@@ -5,7 +5,7 @@ facets = {}
 facet = []
 flen = 0
 state = 0
-rend = 100000
+rend = 10000
 seed = random.randint(1, rend)
 random.seed(seed)
 

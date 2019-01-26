@@ -39,7 +39,8 @@ rund: debug
 	@./build-debug/main/marlin
 
 valgrind: debug
-	@valgrind -v --tool=memcheck --leak-check=full --valgrind-stacksize=10485760 --show-possibly-lost=no ./build-debug/main/marlin
+	#@valgrind -v --tool=memcheck --leak-check=full --valgrind-stacksize=10485760 --show-possibly-lost=no ./build-debug/main/marlin
+	@valgrind -v --tool=memcheck --valgrind-stacksize=10485760 --show-possibly-lost=no ./build-debug/main/marlin
 
 callgrind: debug
 	@valgrind --tool=callgrind -v ./build-debug/main/marlin

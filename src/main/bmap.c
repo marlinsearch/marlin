@@ -464,16 +464,43 @@ uint32_t bmap_get_first(struct bmap *b) {
     return f;
 }
 
-uint32_t bmap_get_dumplen(struct bmap *b) {
-    int s = 0;
-
+uint32_t bmap_get_dumplen(const struct bmap *b) {
+    uint32_t mlen = 1; // To store num of items
     for (int i=0; i<b->num_c; i++) {
-        if (cont_cardinality(&b->c[i]) <= CUTOFF) {
-            s += (cont_cardinality(&b->c[i]) + 2) * sizeof(uint16_t);
-        } else {
-            s += (4096 + 2) * sizeof(uint16_t);
-        }
+        mlen += 2; // id + cardinality
+        mlen += (cont_cardinality(&b->c[i]) > CUTOFF)?CUTOFF:b->c[i].buffer[1];
     }
-
-    return s;
+    return mlen * sizeof(uint16_t);
 }
+
+// Assumes that buf is big enough to dump all data 
+void bmap_dump(const struct bmap *b, uint16_t *buf) {
+    buf[0] = b->num_c;
+    buf++;
+    for (int i=0; i<b->num_c; i++) {
+        int len = (cont_cardinality(&b->c[i]) > CUTOFF) ? CUTOFF : b->c[i].buffer[1];
+        len += 2; // id + card
+        memcpy(buf, b->c[i].buffer, len*sizeof(uint16_t));
+        buf += len;
+    }
+}
+
+void bmap_load(struct bmap *b, const uint16_t *buf) {
+    b->num_c = *buf;
+    b->c = calloc(b->num_c, sizeof(struct cont));
+    buf++;
+    for (int i=0; i<b->num_c; i++) {
+        uint32_t card = buf[1];
+        if (card == 0) {
+            if (buf[2] == 0xFFFF) {
+                card = 65536;
+            }
+        }
+        int len = ((card > CUTOFF)?CUTOFF:buf[1])+2; // 2 for id and cardinality
+        b->c[i].buffer = malloc(sizeof(uint16_t)*len);
+        memcpy(b->c[i].buffer, buf, len*sizeof(uint16_t));
+        buf += len;
+    }
+}
+
+

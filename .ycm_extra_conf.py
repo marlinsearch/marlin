@@ -46,6 +46,7 @@ flags = [
     '-I./src/../deps/lmdb',
     '-I./src/../deps/utf8proc',
     '-I./src/inc',
+    '-I./src/analyzer',
     '-I./src/utils',
     '-I./src/utils/../inc',
     '-Wall',
