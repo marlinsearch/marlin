@@ -157,22 +157,78 @@ static void si_write_end(struct sindex *si) {
 }
 
 /* Intializes per object data which is in the write cache */
-static void sindex_objdata_init(struct sindex *si) {
+static inline void sindex_objdata_init(struct sindex *si) {
     struct obj_data *od = &si->wc->od;
     memset(od->num_data, 0, (si->map->num_numbers*sizeof(double)));
+
+    kv_init(od->kv_widpos);
 
     for (int i = 0; i<si->map->num_facets; i++) {
         kv_init(od->facet_data[i]);
     }
 }
 
-/* Stores the per object data into lmdb.  Clears memory allocated 
- * to store per object index info
- * */
-static void sindex_store_objdata(struct sindex *si) {
+/* Stores the per object numeric and facet data.
+ * This is split from word position information as this will
+ * mostly be used during large scale aggregations
+ */
+static inline void store_facet_num_data(struct sindex *si, struct obj_data *od) {
+    // Calculate storage size required to store the data
+    // Start with size required to store numeric data
+    size_t size = si->map->num_numbers * sizeof(double);
+    // Add the facet data size
+    size += (si->map->num_facets * sizeof(uint32_t));
+    for (int i = 0; i < si->map->num_facets; i++) {
+        size += (kv_size(od->facet_data[i]) * sizeof(uint32_t));
+    }
+
+    // Reserve space in lmdb to store this data
+    MDB_val key,data;
+    key.mv_size = sizeof(uint32_t);
+    key.mv_data = &od->oid;
+    data.mv_data = NULL;
+    data.mv_size = size;
+
+    if (mdb_put(si->txn, si->oid2fndata_dbi, &key, &data, MDB_RESERVE) != 0) {
+        M_ERR("Failed to allocate data to store oid2fndata for oid %u", od->oid);
+        return;
+    }
+
+    // First store numeric data
+    double *dpos = data.mv_data;
+    for (int i = 0; i < si->map->num_numbers; i++) {
+        dpos[i] = od->num_data[i];
+    }
+
+    uint32_t *pos = (uint32_t *)(dpos + si->map->num_numbers);
+    // For each facet, we have a count followed by facet ids
+    for (int i = 0; i < si->map->num_facets; i++) {
+        facets_t *f = (facets_t *)pos;
+        f->count = kv_size(od->facet_data[i]);
+        for (int j = 0; j < f->count; j++) {
+            f->data[j] = kv_A(od->facet_data[i], j);
+        }
+        pos += (f->count + 1);
+    }
+}
+
+/* Stores the per object data into lmdb. Per object data is
+ * store in 2 different dbi's.  One for word / freq / position
+ * the other for numbers & facets.
+ *
+ * Finally clears memory allocated to store per object index info
+ */
+static inline void sindex_store_objdata(struct sindex *si) {
     struct obj_data *od = &si->wc->od;
 
-    // Clean up per obj data
+    store_facet_num_data(si, od);
+
+    /* Clean up per obj data */
+    for (int i = 0; i < kv_size(od->kv_widpos); i++) {
+        free(kv_A(od->kv_widpos, i));
+    }
+    kv_destroy(od->kv_widpos);
+
     for (int i = 0; i<si->map->num_facets; i++) {
         kv_destroy(od->facet_data[i]);
     }
@@ -275,7 +331,14 @@ static void string_new_word_pos(word_pos_t *wp, void *data) {
             wid, od->oid, 0);
     wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
             wid, od->oid, p);
-    // TODO: Index wid position
+
+    // Store wid positions
+    wid_pos_t *widpos = malloc(sizeof(wid_pos_t));
+    widpos->wid = wid;
+    widpos->priority = ad->priority;
+    widpos->position = wp->position;
+    // Add it to the end of the list
+    kv_push(wid_pos_t *, od->kv_widpos, widpos);
 }
 
 // TODO: better analyzer usage, configurable etc.,
@@ -501,6 +564,7 @@ struct sindex *sindex_new(struct shard *shard) {
     mdb_dbi_open(si->txn, DBI_TWID2WIDBMAP, MDB_CREATE|MDB_INTEGERKEY, &si->twid2widbmap_dbi);
     mdb_dbi_open(si->txn, DBI_TWID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->twid2bmap_dbi);
     mdb_dbi_open(si->txn, DBI_WID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->wid2bmap_dbi);
+    mdb_dbi_open(si->txn, DBI_OID2FNDATA, MDB_CREATE|MDB_INTEGERKEY, &si->oid2fndata_dbi);
 
     strcat(path, "/dtrie.db");
     si->trie = dtrie_new(path, si->boolid2bmap_dbi, si->txn);

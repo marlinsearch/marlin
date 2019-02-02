@@ -14,6 +14,8 @@
 #define DBI_TWID2WIDBMAP    "twid2widbmap_dbi"
 #define DBI_TWID2BMAP       "twid2bmap_dbi"
 #define DBI_WID2BMAP        "wid2bmap_dbi"
+#define DBI_OID2FNDATA      "oid2fndata_dbi"
+#define DBI_OID2WPOS        "oid2wpos_dbi"
 
 #endif
 
