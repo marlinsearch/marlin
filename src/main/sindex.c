@@ -18,7 +18,7 @@
         map = kh_val(kh, k);                              \
     } else {                                                \
         map = mbmap_new(hid);                            \
-        mbmap_load(map, txn, si->facetid2bmap_dbi);     \
+        mbmap_load(map, txn, dbi);     \
         int ret = 0;                                        \
         k = kh_put(WID2MBMAP, kh, hid, &ret);              \
         kh_value(kh, k) = map;                              \
@@ -34,7 +34,7 @@
         map = kh_val(kh, k);                              \
     } else {                                                \
         map = mbmap_new(hid);                            \
-        mbmap_load(map, txn, si->facetid2bmap_dbi);     \
+        mbmap_load(map, txn, dbi);     \
         int ret = 0;                                        \
         k = kh_put(WID2MBMAP, kh, hid, &ret);              \
         kh_value(kh, k) = map;                              \
@@ -264,9 +264,9 @@ static void string_new_word_pos(word_pos_t *wp, void *data) {
 
     // Set the top-level wid to obj id mapping
     for (int i = 0; i < limit; i++) {
-        wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2widbmap, si->txn, 
+        wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2bmap, si->txn, 
                      od->twid[i], od->oid, 0);
-        wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2widbmap, si->txn, 
+        wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2bmap, si->txn, 
                      od->twid[i], od->oid, p);
     }
 

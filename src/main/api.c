@@ -285,7 +285,7 @@ static int api_v1(h2o_handler_t *self, h2o_req_t *req) {
 
 static void on_server_notification(h2o_multithread_receiver_t *receiver, h2o_linklist_t *messages) {
     /* the notification is used only for exitting h2o_evloop_run; actual changes are done in the main loop of run_loop */
-    //printf("on server notification\n");
+    printf("on server notification\n");
 
     while (!h2o_linklist_is_empty(messages)) {
         h2o_multithread_message_t *message = H2O_STRUCT_FROM_MEMBER(h2o_multithread_message_t, link, messages->next);
