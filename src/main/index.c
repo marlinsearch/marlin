@@ -48,7 +48,7 @@ void index_worker_add_objects(struct index *in, json_t **sh_j) {
             threadpool_add(index_pool, worker_add_process, &sh_add[i], 0);
         } else {
             // It is an empty json array, which needs to be freed
-            json_decref(sh_add[i].sh_j);
+            json_decref(sh_j[i]);
             worker.pending--;
         }
     }
