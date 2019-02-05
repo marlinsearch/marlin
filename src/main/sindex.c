@@ -7,6 +7,7 @@
 #include "farmhash-c.h"
 #include "mbmap.h"
 #include "analyzer.h"
+#include "ksort.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 
@@ -42,6 +43,20 @@
     mbmap_remove(map, vid, txn, dbi);                       \
 }
 
+
+typedef struct {
+    wid_pos_t *wp;
+} wp_hold_t;
+
+static inline bool compare_wpos(wp_hold_t a, wp_hold_t b) {
+    if (a.wp->wid == b.wp->wid) {
+        if (a.wp->priority == b.wp->priority) {
+            return a.wp->position < b.wp->position;
+        } else return a.wp->priority < b.wp->priority;
+    } else return a.wp->wid < b.wp->wid;
+}
+
+KSORT_INIT(compwordpos, wp_hold_t, compare_wpos)
 
 static int double_compare(const MDB_val *a, const MDB_val *b) {
     return (*(double *)b->mv_data < *(double *)a->mv_data) ? -1 :
@@ -162,6 +177,7 @@ static inline void sindex_objdata_init(struct sindex *si) {
     memset(od->num_data, 0, (si->map->num_numbers*sizeof(double)));
 
     kv_init(od->kv_widpos);
+    od->kh_uniqwid = kh_init(UNIQWID);
 
     for (int i = 0; i<si->map->num_facets; i++) {
         kv_init(od->facet_data[i]);
@@ -202,6 +218,9 @@ static inline void store_facet_num_data(struct sindex *si, struct obj_data *od) 
 
     uint32_t *pos = (uint32_t *)(dpos + si->map->num_numbers);
     // For each facet, we have a count followed by facet ids
+    // uint32 (count) | uint32 (facet id) | uint32 (facet id) ...
+    // There is not point storing facet id as vint as these are facet hashes
+    // and not really useful to be a vint
     for (int i = 0; i < si->map->num_facets; i++) {
         facets_t *f = (facets_t *)pos;
         f->count = kv_size(od->facet_data[i]);
@@ -212,22 +231,196 @@ static inline void store_facet_num_data(struct sindex *si, struct obj_data *od) 
     }
 }
 
+static inline uint8_t *write_vint(uint8_t *buf, const int vi) {
+    uint32_t i = vi;
+    while ((i & ~0x7F) != 0) {
+        *buf = ((uint8_t)((i & 0x7f) | 0x80));
+        buf++;
+        i >>= 7;
+    }
+    *buf = ((uint8_t)i);
+    buf++;
+    return buf;
+}
+
+static inline uint8_t *read_vint(uint8_t *buf, int *value) {
+    uint8_t b = *buf;
+    buf++;
+    int i = b & 0x7F;
+    for (int shift = 7; (b & 0x80) != 0; shift += 7) {
+        b = *buf;
+        buf++;
+        i |= (b & 0x7F) << shift;
+    }
+    *value = i;
+    return buf; 
+} 
+
+#if 0
+static void dump_widpos(wp_hold_t *h, int len) {
+    for (int i = 0; i < len; i++) {
+        wid_pos_t *v = h[i].wp;
+        printf("%u %d %u\n", v->wid, v->priority, v->position);
+    }
+}
+
+static void dump_word_data(uint8_t *head) {
+    uint8_t *pos = head;
+    uint16_t *num_words = (uint16_t *)pos;
+    pos += 2;
+    wid_info_t *wi = (wid_info_t *) pos;
+    printf("Num words is %d\n", *num_words);
+    for (int i = 0; i < *num_words; i++) {
+        printf("Word id %u is_position %u pri %u offset %u\n", wi[i].wid, wi[i].is_position, wi[i].priority, wi[i].offset );
+        if (!wi[i].is_position) {
+            uint8_t *p = head + wi[i].offset;
+            uint8_t *freq = p;
+            p++;
+            printf("Freq %u\n", *freq);
+            int x = 0;
+            while (x < *freq) {
+                uint8_t *prio = p;
+                p++;
+                uint8_t *count = p;
+                p++;
+                printf("Freq %u : Priority %u : count %u\n", *freq, *prio, *count);
+                for (int j = 0; j < *count; j++) {
+                    int pos = 0;
+                    p = read_vint(p, &pos);
+                    printf("Position : %d\n", pos);
+                    x++;
+                }
+                if (*p != 0xFF) {
+                    printf("WTF\n");
+                }
+                p++;
+            }
+
+        }
+    }
+}
+#endif
+
+/* Returns number of occurences of word id in a given object */
+static inline int obj_wid_count(struct obj_data *od, uint32_t wid) {
+    khiter_t k = kh_get(UNIQWID, od->kh_uniqwid, wid);
+    if (LIKELY(k != kh_end(od->kh_uniqwid))) {
+        return kh_value(od->kh_uniqwid, k);
+    }
+    return 0;
+}
+
+
+/* Stores word id / frequency and positions for each object */
+static void store_wordpos_data(struct sindex *si, struct obj_data *od) {
+    if (UNLIKELY(kv_size(od->kv_widpos) == 0)) return;
+    /* First sort the position information on wid.priority.position */
+    wp_hold_t *h = malloc(sizeof(wp_hold_t) * kv_size(od->kv_widpos));
+    size_t wp_len = kv_size(od->kv_widpos);
+    for (int i = 0; i < wp_len; i++) {
+        h[i].wp = kv_A(od->kv_widpos, i);
+    }
+    // dump_widpos(h, wp_len);
+    ks_introsort(compwordpos, wp_len, h);
+    // dump_widpos(h, wp_len);
+    /* Save it to dbi */
+    /* First allocate the max possible memory that may be used for this data */
+    // TODO: Big comment on how data is organized, explain the design picture from notes
+    uint8_t *data = malloc(kv_size(od->kv_widpos) * sizeof(wid_pos_t));
+    uint16_t *numwords = (uint16_t *) data;
+    *numwords = kh_size(od->kh_uniqwid);
+    uint8_t *pos = data + 2;  
+    uint8_t *dpos = pos + (kh_size(od->kh_uniqwid) * sizeof(wid_info_t));
+
+    // Walk through the list and fill words / freq / positions
+    int x = 0;
+    uint32_t last_wid = 0;
+    uint8_t last_priority = 0xFF;
+    uint8_t *wid_count = NULL;
+    wid_info_t *wi = (wid_info_t *) pos;
+    wi--;
+
+    while (x < wp_len) {
+        wid_pos_t *wp = h[x].wp;
+        // printf("Setting wid %u pri %d pos %u\n", wp->wid, wp->priority, wp->position);
+        // Updates the wid_info at the head
+        if (wp->wid != last_wid) {
+            last_wid = wp->wid;
+            wi++;
+            int freq = obj_wid_count(od, wp->wid);
+            // printf("Frequency is %d\n", freq);
+            wi->wid = wp->wid;
+            if (freq == 1) {
+                wi->is_position = 1;
+                wi->priority = wp->priority;
+                wi->offset = wp->position;
+                goto next_widpos;
+            } else {
+                wi->is_position = 0;
+                wi->priority = 0;
+                wi->offset = (dpos - data);
+                last_priority = 0xFF;
+                *dpos = freq;
+                dpos++;
+            }
+        }
+        // Updates the data portion, which holds priority / word count
+        if (last_priority != wp->priority) {
+           // printf("Priority for wid %u changed from %u to %u\n", last_wid, last_priority, wp->priority);
+            last_priority = wp->priority;
+            *dpos = wp->priority;
+            dpos++;
+            wid_count = dpos;
+            *wid_count = 0;
+            dpos++;
+        }
+        // Updates the position information
+        *wid_count =  *wid_count + 1;
+        dpos = write_vint(dpos, wp->position);
+        if (!((x + 1) < wp_len && h[x+1].wp->wid == last_wid && 
+                    h[x+1].wp->priority == last_priority)) {
+            *dpos = 0xFF;
+            dpos++;
+        }
+
+next_widpos:
+        x++;
+    }
+    // printf("Full word data length %lu\n", (dpos - data));
+    // dump_word_data(data);
+
+    // Reserve space in lmdb to store this data
+    MDB_val key, value;
+    key.mv_size = sizeof(uint32_t);
+    key.mv_data = &od->oid;
+    value.mv_data = data;
+    value.mv_size = (dpos - data);
+
+    if (mdb_put(si->txn, si->oid2wpos_dbi, &key, &value, 0) != 0) {
+        M_ERR("Failed to store oid2wpos for oid %u", od->oid);
+    }
+    free(data);
+    free(h);
+}
+
 /* Stores the per object data into lmdb. Per object data is
  * store in 2 different dbi's.  One for word / freq / position
  * the other for numbers & facets.
  *
  * Finally clears memory allocated to store per object index info
  */
-static inline void sindex_store_objdata(struct sindex *si) {
+static void sindex_store_objdata(struct sindex *si) {
     struct obj_data *od = &si->wc->od;
 
     store_facet_num_data(si, od);
+    store_wordpos_data(si, od);
 
     /* Clean up per obj data */
     for (int i = 0; i < kv_size(od->kv_widpos); i++) {
         free(kv_A(od->kv_widpos, i));
     }
     kv_destroy(od->kv_widpos);
+    kh_destroy(UNIQWID, od->kh_uniqwid);
 
     for (int i = 0; i<si->map->num_facets; i++) {
         kv_destroy(od->facet_data[i]);
@@ -339,6 +532,14 @@ static void string_new_word_pos(word_pos_t *wp, void *data) {
     widpos->position = wp->position;
     // Add it to the end of the list
     kv_push(wid_pos_t *, od->kv_widpos, widpos);
+    // Add the word id to the hash set
+    int ret = 0;
+    khiter_t k = kh_put(UNIQWID, od->kh_uniqwid, wid, &ret);
+    if (ret == 1) {
+        kh_value(od->kh_uniqwid, k) = 1;
+    } else {
+        kh_value(od->kh_uniqwid, k) = kh_value(od->kh_uniqwid, k) + 1;
+    }
 }
 
 // TODO: better analyzer usage, configurable etc.,
@@ -370,7 +571,7 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
                     index_string_facet(si, str, s->f_priority);
                 }
                 if (s->is_indexed) {
-                    index_string(si, str, s->f_priority);
+                    index_string(si, str, s->i_priority);
                 }
             }
             break;
@@ -383,6 +584,9 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
                     const char *str = json_string_value(js);
                     if (s->is_facet) {
                         index_string_facet(si, str, s->f_priority);
+                    }
+                    if (s->is_indexed) {
+                        index_string(si, str, s->i_priority);
                     }
                 }
             }
@@ -565,6 +769,7 @@ struct sindex *sindex_new(struct shard *shard) {
     mdb_dbi_open(si->txn, DBI_TWID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->twid2bmap_dbi);
     mdb_dbi_open(si->txn, DBI_WID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->wid2bmap_dbi);
     mdb_dbi_open(si->txn, DBI_OID2FNDATA, MDB_CREATE|MDB_INTEGERKEY, &si->oid2fndata_dbi);
+    mdb_dbi_open(si->txn, DBI_OID2WPOS, MDB_CREATE|MDB_INTEGERKEY, &si->oid2wpos_dbi);
 
     strcat(path, "/dtrie.db");
     si->trie = dtrie_new(path, si->boolid2bmap_dbi, si->txn);

@@ -58,7 +58,7 @@ static void analyze_string_for_indexing(const char *str, new_word_pos_f cb, void
                         is_hyphen = 1;
                         word_pos.word.chars = &token[hs];
                         word_pos.word.length = len - hs;
-                        word_pos.position = position++;
+                        word_pos.position = ++position;
                         cb(&word_pos, data);
                         hs = len;
                         break;
@@ -86,7 +86,7 @@ static void analyze_string_for_indexing(const char *str, new_word_pos_f cb, void
             }
             word_pos.word.chars = token;
             word_pos.word.length = len;
-            word_pos.position = position++;
+            word_pos.position = ++position;
             cb(&word_pos, data);
 reset_word:
             is_hyphen = 0;
