@@ -46,6 +46,7 @@ void init_whitespace_analyzer(void) {
     struct analyzer *a = calloc(1, sizeof(struct analyzer));
     snprintf(a->name, sizeof(a->name), "%s", "whitespace");
     a->analyze_string_for_indexing = &analyze_string_for_indexing;
+    a->analyze_string_for_search = &analyze_string_for_indexing;
     register_analyzer(a);
 }
 

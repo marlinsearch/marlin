@@ -7,6 +7,8 @@
 #include "platform.h"
 #include "marlin.h"
 #include "workers.h"
+#include "analyzer.h"
+#include "query.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 #define USE_INDEX_THREAD_POOL 1
@@ -438,6 +440,41 @@ static char *index_clear_callback(h2o_req_t *req, void *data) {
     return strdup(J_SUCCESS);
 }
 
+/* Called by the analyzer for every word in the query string.
+ * store a copy of the word in the query and update num words*/
+static void query_string_word_cb(word_pos_t *wp, void *data) {
+    struct query *q = (struct query *) data;
+    word_t *word = malloc(sizeof(word_t));
+    word->length = wp->word.length;
+    word->chars = malloc(sizeof(chr_t) * word->length);
+    memcpy(word->chars, wp->word.chars, sizeof(chr_t) * word->length);
+    q->num_words++;
+    kv_push(word_t *, q->words, word);
+}
+
+static char *index_query_callback(h2o_req_t *req, void *data) {
+    struct index *in = data;
+    // TODO: Apply query limits 
+    struct query *q = NULL;
+
+    // Load and parse the query object
+    json_error_t error;
+    json_t *jq = json_loadb(req->entity.base, req->entity.len, 0, &error);
+
+    if (jq && json_is_object(jq)) {
+        q = query_new(in);
+        const char *qstr = json_string_value(json_object_get(jq, J_QUERY));
+        if (qstr) {
+            struct analyzer *a = get_default_analyzer();
+            a->analyze_string_for_search(qstr, query_string_word_cb, q);
+        }
+    }
+
+    query_free(q);
+    return strdup(J_SUCCESS);
+}
+
+
 static void index_load_settings(struct index *in) {
     char path[PATH_MAX];
     snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, in->app->name, 
@@ -467,6 +504,8 @@ const struct api_path apipaths[] = {
     // Clear Index
     {"POST", URL_CLEAR, KA_DELETE, index_clear_callback},
     // Bulk
+    // Query Index
+    {"POST", URL_QUERY, KA_QUERY, index_query_callback},
     // Done here
     {"", "", KA_NONE, NULL}
     /*

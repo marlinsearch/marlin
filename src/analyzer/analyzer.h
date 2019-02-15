@@ -22,12 +22,15 @@ typedef void (*new_word_pos_f) (word_pos_t *wordpos, void *data);
 
 typedef void (*index_string_f) (const char *str, new_word_pos_f cb, void *data);
 
+typedef void (*search_string_f) (const char *str, new_word_pos_f cb, void *data);
+
 typedef void (*free_analyzer_f) (struct analyzer *a);
 
 
 struct analyzer {
     char name[MAX_ANALYZER_NAME];
     index_string_f analyze_string_for_indexing; 
+    search_string_f analyze_string_for_search; 
     free_analyzer_f free_analyzer;
     void *cfg;
     struct analyzer *next;
