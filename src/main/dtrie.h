@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include "bmap.h"
 #include "platform.h"
+#include <lmdb.h>
 
 #define DT_MAGIC    0xBEDEADFE
 #define DT_VERSION  0x00000001
@@ -38,6 +39,7 @@ struct PACKED dnode_ptr {
     struct dnode_id nid;
 };
 
+// Nodes may store word ids (wid), top-level word ids (twid)
 struct PACKED dnode {
     uint32_t type:4;
     uint32_t has_wid:1;
@@ -58,7 +60,6 @@ struct dt_meta {
     uint32_t free_nodes[NS_MAX*10];
 };
 
-
 struct dtrie {
     int fd;
     uint8_t *map;
@@ -71,7 +72,6 @@ struct dtrie {
     pthread_rwlockattr_t rwlockattr;
 };
 
-
 struct node_iter {
     struct dtrie *trie;
     struct dnode *node;
@@ -81,10 +81,12 @@ struct node_iter {
 };
 
 
-struct dtrie *dtrie_new(const char *path);
+struct dtrie *dtrie_new(const char *path, MDB_dbi dbi, MDB_txn *txn);
 uint32_t dtrie_insert(struct dtrie *dt, const CHR *str, int slen, uint32_t *twids);
 uint32_t dtrie_exists(struct dtrie *dt, const CHR *str, int slen, uint32_t *twids);
 void dump_dtrie_stats(struct dtrie *dt);
+void dtrie_write_start(struct dtrie *dt);
+void dtrie_write_end(struct dtrie *dt, MDB_dbi dbi, MDB_txn *txn);
 
 #endif
 

@@ -16,6 +16,23 @@
 struct marlin *marlin;
 threadpool_t *index_pool;
 
+/**
+ * Marlin uses a number of threadpools to perform its operations.
+ * These are the global threadpools shared by all the different indices and its respective
+ * shards.
+ */
+static void setup_thread_pools(void) {
+    /* Index pool is used solely for indexing.  Each index by itself can only process
+     * one index job at any given time. An index job may be a single object add / delete
+     * or modify. It can also be a bulk add or delete of thousands of objects.
+     * When a bulk add of 1000s of objects take place, the data is split for multiple
+     * shards and a indexpool task is launched for each of these shards.
+     *
+     * The maximum number of indexpool tasks that can be queued is thus 
+     * Total number of all shards of all indices.
+     * */
+    index_pool = threadpool_create(marlin->num_processors, marlin->num_processors * 256, 0);
+}
 
 // Load marlin settings
 void load_settings(const char *settings_path) {
@@ -56,7 +73,9 @@ void load_settings(const char *settings_path) {
     } else {
         marlin->num_threads = sysconf(_SC_NPROCESSORS_ONLN);
     }
-    index_pool = threadpool_create(8, 64, 0);
+    marlin->num_processors = sysconf(_SC_NPROCESSORS_ONLN);
+    /* Setup necessary thread pools */
+    setup_thread_pools();
     json_decref(js);
 }
 

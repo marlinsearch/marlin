@@ -6,78 +6,75 @@
 #include "dbi.h"
 #include "farmhash-c.h"
 #include "mbmap.h"
+#include "analyzer.h"
+#include "ksort.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 
+#define wid2bmap_add(dbi, kh, txn, keyid, vid, priority) {  \
+    uint64_t hid = IDPRIORITY(keyid, priority);             \
+    struct mbmap *map;                                      \
+    khiter_t k = kh_get(WID2MBMAP, kh, hid);                \
+    if (LIKELY(k != kh_end(kh))) {                          \
+        map = kh_val(kh, k);                              \
+    } else {                                                \
+        map = mbmap_new(hid);                            \
+        mbmap_load(map, txn, dbi);     \
+        int ret = 0;                                        \
+        k = kh_put(WID2MBMAP, kh, hid, &ret);              \
+        kh_value(kh, k) = map;                              \
+    }                                                       \
+    mbmap_add(map, vid, txn, dbi);                          \
+}
+
+#define wid2bmap_remove(dbi, kh, txn, keyid, vid, priority) {  \
+    uint64_t hid = IDPRIORITY(keyid, priority);             \
+    struct mbmap *map;                                      \
+    khiter_t k = kh_get(WID2MBMAP, kh, hid);                \
+    if (LIKELY(k != kh_end(kh))) {                          \
+        map = kh_val(kh, k);                              \
+    } else {                                                \
+        map = mbmap_new(hid);                            \
+        mbmap_load(map, txn, dbi);     \
+        int ret = 0;                                        \
+        k = kh_put(WID2MBMAP, kh, hid, &ret);              \
+        kh_value(kh, k) = map;                              \
+    }                                                       \
+    mbmap_remove(map, vid, txn, dbi);                       \
+}
+
+
+typedef struct {
+    wid_pos_t *wp;
+} wp_hold_t;
+
+static inline bool compare_wpos(wp_hold_t a, wp_hold_t b) {
+    if (a.wp->wid == b.wp->wid) {
+        if (a.wp->priority == b.wp->priority) {
+            return a.wp->position < b.wp->position;
+        } else return a.wp->priority < b.wp->priority;
+    } else return a.wp->wid < b.wp->wid;
+}
+
+KSORT_INIT(compwordpos, wp_hold_t, compare_wpos)
 
 static int double_compare(const MDB_val *a, const MDB_val *b) {
     return (*(double *)b->mv_data < *(double *)a->mv_data) ? -1 :
         *(double *)b->mv_data > *(double *)a->mv_data;
 }
 
-// Store the object id in fhid bitmap.
-static void update_facetid2bmap(struct sindex *si, uint32_t facet_id, int priority, bool add) {
-    uint64_t fhid = IDPRIORITY(facet_id, priority);
-    struct mbmap *mbmap;
-    khash_t(FACETID2BMAP) *kh = si->wc->kh_facetid2bmap;
-    khiter_t k = kh_get(FACETID2BMAP, kh, fhid);
-    // If it exists, we already have the bmap
-    if (LIKELY(k != kh_end(kh))) {
-        mbmap = kh_val(kh, k);
-    } else {
-        // Try to load it from lmdb
-        mbmap = mbmap_new(fhid);
-        mbmap_load(mbmap, si->txn, si->facetid2bmap_dbi);
-        int ret = 0;
-        k = kh_put(FACETID2BMAP, kh, fhid, &ret);
-        kh_value(kh, k) = mbmap;
-    }
-    if (add) {
-        // Add the objectid to the bmap
-        mbmap_add(mbmap, si->wc->od.oid, si->txn, si->facetid2bmap_dbi);
-    } else {
-        // Remove the objectid from the bmap
-        mbmap_remove(mbmap, si->wc->od.oid, si->txn, si->facetid2bmap_dbi);
-    }
-}
-
-// Store the object id in boolid bitmap.
-static inline void update_boolid2bmap(struct sindex *si, uint32_t bool_id, int priority, bool add) {
-    uint64_t bhid = IDPRIORITY(bool_id, priority);
-    struct mbmap *mbmap;
-    khash_t(BOOLID2BMAP) *kh = si->wc->kh_boolid2bmap;
-    khiter_t k = kh_get(BOOLID2BMAP, kh, bhid);
-    // If it exists, we already have the bmap
-    if (LIKELY(k != kh_end(kh))) {
-        mbmap = kh_val(kh, k);
-    } else {
-        // Try to load it from lmdb
-        mbmap = mbmap_new(bhid);
-        mbmap_load(mbmap, si->txn, si->boolid2bmap_dbi);
-        int ret = 0;
-        k = kh_put(BOOLID2BMAP, kh, bhid, &ret);
-        kh_value(kh, k) = mbmap;
-    }
-    if (add) {
-        // Add the objectid to the bmap
-        mbmap_add(mbmap, si->wc->od.oid, si->txn, si->boolid2bmap_dbi);
-    } else {
-        // Remove the objectid from the bmap
-        mbmap_remove(mbmap, si->wc->od.oid, si->txn, si->boolid2bmap_dbi);
-    }
-}
-
-
-
 static void si_write_start(struct sindex *si) {
     // Prepares the write cache
     si->wc = calloc(1, sizeof(struct write_cache));
 
     // Setup all khashes
-    si->wc->kh_facetid2bmap = kh_init(FACETID2BMAP);
     si->wc->kh_facetid2str = kh_init(FACETID2STR);
-    si->wc->kh_boolid2bmap = kh_init(BOOLID2BMAP);
-
+    si->wc->kh_boolid2bmap = kh_init(WID2MBMAP);
+    si->wc->kh_facetid2bmap = kh_init(WID2MBMAP);
+    si->wc->kh_wid2bmap = kh_init(WID2MBMAP);
+    si->wc->kh_twid2bmap = kh_init(WID2MBMAP);
+    si->wc->kh_twid2widbmap = kh_init(WID2MBMAP);
+ 
     // Setup per obj data
     struct obj_data *od = &si->wc->od;
 
@@ -91,6 +88,7 @@ static void si_write_start(struct sindex *si) {
         od->facet_data = calloc(si->map->num_facets, sizeof(kvec_t(uint32_t)));
     }
 
+    dtrie_write_start(si->trie);
     // Begin the write transaction
     mdb_txn_begin(si->env, NULL, 0, &si->txn);
 }
@@ -124,13 +122,31 @@ static void si_write_end(struct sindex *si) {
     kh_foreach_value(si->wc->kh_boolid2bmap, mbmap, {
         store_id2mbmap(mbmap, si->boolid2bmap_dbi, si->txn);
     });
-    kh_destroy(BOOLID2BMAP, si->wc->kh_boolid2bmap);
+    kh_destroy(WID2MBMAP, si->wc->kh_boolid2bmap);
 
     // Store facet id to bmap mapping
     kh_foreach_value(si->wc->kh_facetid2bmap, mbmap, {
         store_id2mbmap(mbmap, si->facetid2bmap_dbi, si->txn);
     });
-    kh_destroy(FACETID2BMAP, si->wc->kh_facetid2bmap);
+    kh_destroy(WID2MBMAP, si->wc->kh_facetid2bmap);
+
+    // Store twid to wid mapping
+    kh_foreach_value(si->wc->kh_twid2widbmap, mbmap, {
+        store_id2mbmap(mbmap, si->twid2widbmap_dbi, si->txn);
+    });
+    kh_destroy(WID2MBMAP, si->wc->kh_twid2widbmap);
+
+    // Store twid to objid mapping
+    kh_foreach_value(si->wc->kh_twid2bmap, mbmap, {
+        store_id2mbmap(mbmap, si->twid2bmap_dbi, si->txn);
+    });
+    kh_destroy(WID2MBMAP, si->wc->kh_twid2bmap);
+
+    // Store wid to objid mapping
+    kh_foreach_value(si->wc->kh_wid2bmap, mbmap, {
+        store_id2mbmap(mbmap, si->wid2bmap_dbi, si->txn);
+    });
+    kh_destroy(WID2MBMAP, si->wc->kh_wid2bmap);
 
     // Store facet id to string mappings
     uint32_t facet_id;
@@ -144,6 +160,7 @@ static void si_write_end(struct sindex *si) {
     });
     kh_destroy(FACETID2STR, si->wc->kh_facetid2str);
 
+    dtrie_write_end(si->trie, si->boolid2bmap_dbi, si->txn);
     // Commit write transaction
     mdb_txn_commit(si->txn);
 
@@ -155,22 +172,256 @@ static void si_write_end(struct sindex *si) {
 }
 
 /* Intializes per object data which is in the write cache */
-static void sindex_objdata_init(struct sindex *si) {
+static inline void sindex_objdata_init(struct sindex *si) {
     struct obj_data *od = &si->wc->od;
     memset(od->num_data, 0, (si->map->num_numbers*sizeof(double)));
+
+    kv_init(od->kv_widpos);
+    od->kh_uniqwid = kh_init(UNIQWID);
 
     for (int i = 0; i<si->map->num_facets; i++) {
         kv_init(od->facet_data[i]);
     }
 }
 
-/* Stores the per object data into lmdb.  Clears memory allocated 
- * to store per object index info
- * */
+/* Stores the per object numeric and facet data.
+ * This is split from word position information as this will
+ * mostly be used during large scale aggregations
+ */
+static inline void store_facet_num_data(struct sindex *si, struct obj_data *od) {
+    // Calculate storage size required to store the data
+    // Start with size required to store numeric data
+    size_t size = si->map->num_numbers * sizeof(double);
+    // Add the facet data size
+    size += (si->map->num_facets * sizeof(uint32_t));
+    for (int i = 0; i < si->map->num_facets; i++) {
+        size += (kv_size(od->facet_data[i]) * sizeof(uint32_t));
+    }
+
+    // Reserve space in lmdb to store this data
+    MDB_val key,data;
+    key.mv_size = sizeof(uint32_t);
+    key.mv_data = &od->oid;
+    data.mv_data = NULL;
+    data.mv_size = size;
+
+    if (mdb_put(si->txn, si->oid2fndata_dbi, &key, &data, MDB_RESERVE) != 0) {
+        M_ERR("Failed to allocate data to store oid2fndata for oid %u", od->oid);
+        return;
+    }
+
+    // First store numeric data
+    double *dpos = data.mv_data;
+    for (int i = 0; i < si->map->num_numbers; i++) {
+        dpos[i] = od->num_data[i];
+    }
+
+    uint32_t *pos = (uint32_t *)(dpos + si->map->num_numbers);
+    // For each facet, we have a count followed by facet ids
+    // uint32 (count) | uint32 (facet id) | uint32 (facet id) ...
+    // There is not point storing facet id as vint as these are facet hashes
+    // and not really useful to be a vint
+    for (int i = 0; i < si->map->num_facets; i++) {
+        facets_t *f = (facets_t *)pos;
+        f->count = kv_size(od->facet_data[i]);
+        for (int j = 0; j < f->count; j++) {
+            f->data[j] = kv_A(od->facet_data[i], j);
+        }
+        pos += (f->count + 1);
+    }
+}
+
+static inline uint8_t *write_vint(uint8_t *buf, const int vi) {
+    uint32_t i = vi;
+    while ((i & ~0x7F) != 0) {
+        *buf = ((uint8_t)((i & 0x7f) | 0x80));
+        buf++;
+        i >>= 7;
+    }
+    *buf = ((uint8_t)i);
+    buf++;
+    return buf;
+}
+
+static inline uint8_t *read_vint(uint8_t *buf, int *value) {
+    uint8_t b = *buf;
+    buf++;
+    int i = b & 0x7F;
+    for (int shift = 7; (b & 0x80) != 0; shift += 7) {
+        b = *buf;
+        buf++;
+        i |= (b & 0x7F) << shift;
+    }
+    *value = i;
+    return buf; 
+} 
+
+#if 0
+static void dump_widpos(wp_hold_t *h, int len) {
+    for (int i = 0; i < len; i++) {
+        wid_pos_t *v = h[i].wp;
+        printf("%u %d %u\n", v->wid, v->priority, v->position);
+    }
+}
+
+static void dump_word_data(uint8_t *head) {
+    uint8_t *pos = head;
+    uint16_t *num_words = (uint16_t *)pos;
+    pos += 2;
+    wid_info_t *wi = (wid_info_t *) pos;
+    printf("Num words is %d\n", *num_words);
+    for (int i = 0; i < *num_words; i++) {
+        printf("Word id %u is_position %u pri %u offset %u\n", wi[i].wid, wi[i].is_position, wi[i].priority, wi[i].offset );
+        if (!wi[i].is_position) {
+            uint8_t *p = head + wi[i].offset;
+            uint8_t *freq = p;
+            p++;
+            printf("Freq %u\n", *freq);
+            int x = 0;
+            while (x < *freq) {
+                uint8_t *prio = p;
+                p++;
+                uint8_t *count = p;
+                p++;
+                printf("Freq %u : Priority %u : count %u\n", *freq, *prio, *count);
+                for (int j = 0; j < *count; j++) {
+                    int pos = 0;
+                    p = read_vint(p, &pos);
+                    printf("Position : %d\n", pos);
+                    x++;
+                }
+                if (*p != 0xFF) {
+                    printf("WTF\n");
+                }
+                p++;
+            }
+
+        }
+    }
+}
+#endif
+
+/* Returns number of occurences of word id in a given object */
+static inline int obj_wid_count(struct obj_data *od, uint32_t wid) {
+    khiter_t k = kh_get(UNIQWID, od->kh_uniqwid, wid);
+    if (LIKELY(k != kh_end(od->kh_uniqwid))) {
+        return kh_value(od->kh_uniqwid, k);
+    }
+    return 0;
+}
+
+
+/* Stores word id / frequency and positions for each object */
+static void store_wordpos_data(struct sindex *si, struct obj_data *od) {
+    if (UNLIKELY(kv_size(od->kv_widpos) == 0)) return;
+    /* First sort the position information on wid.priority.position */
+    wp_hold_t *h = malloc(sizeof(wp_hold_t) * kv_size(od->kv_widpos));
+    size_t wp_len = kv_size(od->kv_widpos);
+    for (int i = 0; i < wp_len; i++) {
+        h[i].wp = kv_A(od->kv_widpos, i);
+    }
+    // dump_widpos(h, wp_len);
+    ks_introsort(compwordpos, wp_len, h);
+    // dump_widpos(h, wp_len);
+    /* Save it to dbi */
+    /* First allocate the max possible memory that may be used for this data */
+    // TODO: Big comment on how data is organized, explain the design picture from notes
+    uint8_t *data = malloc(kv_size(od->kv_widpos) * sizeof(wid_pos_t));
+    uint16_t *numwords = (uint16_t *) data;
+    *numwords = kh_size(od->kh_uniqwid);
+    uint8_t *pos = data + 2;  
+    uint8_t *dpos = pos + (kh_size(od->kh_uniqwid) * sizeof(wid_info_t));
+
+    // Walk through the list and fill words / freq / positions
+    int x = 0;
+    uint32_t last_wid = 0;
+    uint8_t last_priority = 0xFF;
+    uint8_t *wid_count = NULL;
+    wid_info_t *wi = (wid_info_t *) pos;
+    wi--;
+
+    while (x < wp_len) {
+        wid_pos_t *wp = h[x].wp;
+        // printf("Setting wid %u pri %d pos %u\n", wp->wid, wp->priority, wp->position);
+        // Updates the wid_info at the head
+        if (wp->wid != last_wid) {
+            last_wid = wp->wid;
+            wi++;
+            int freq = obj_wid_count(od, wp->wid);
+            // printf("Frequency is %d\n", freq);
+            wi->wid = wp->wid;
+            if (freq == 1) {
+                wi->is_position = 1;
+                wi->priority = wp->priority;
+                wi->offset = wp->position;
+                goto next_widpos;
+            } else {
+                wi->is_position = 0;
+                wi->priority = 0;
+                wi->offset = (dpos - data);
+                last_priority = 0xFF;
+                *dpos = freq;
+                dpos++;
+            }
+        }
+        // Updates the data portion, which holds priority / word count
+        if (last_priority != wp->priority) {
+           // printf("Priority for wid %u changed from %u to %u\n", last_wid, last_priority, wp->priority);
+            last_priority = wp->priority;
+            *dpos = wp->priority;
+            dpos++;
+            wid_count = dpos;
+            *wid_count = 0;
+            dpos++;
+        }
+        // Updates the position information
+        *wid_count =  *wid_count + 1;
+        dpos = write_vint(dpos, wp->position);
+        if (!((x + 1) < wp_len && h[x+1].wp->wid == last_wid && 
+                    h[x+1].wp->priority == last_priority)) {
+            *dpos = 0xFF;
+            dpos++;
+        }
+
+next_widpos:
+        x++;
+    }
+    // printf("Full word data length %lu\n", (dpos - data));
+    // dump_word_data(data);
+
+    // Reserve space in lmdb to store this data
+    MDB_val key, value;
+    key.mv_size = sizeof(uint32_t);
+    key.mv_data = &od->oid;
+    value.mv_data = data;
+    value.mv_size = (dpos - data);
+
+    if (mdb_put(si->txn, si->oid2wpos_dbi, &key, &value, 0) != 0) {
+        M_ERR("Failed to store oid2wpos for oid %u", od->oid);
+    }
+    free(data);
+    free(h);
+}
+
+/* Stores the per object data into lmdb. Per object data is
+ * store in 2 different dbi's.  One for word / freq / position
+ * the other for numbers & facets.
+ *
+ * Finally clears memory allocated to store per object index info
+ */
 static void sindex_store_objdata(struct sindex *si) {
     struct obj_data *od = &si->wc->od;
 
-    // Clean up per obj data
+    store_facet_num_data(si, od);
+    store_wordpos_data(si, od);
+
+    /* Clean up per obj data */
+    for (int i = 0; i < kv_size(od->kv_widpos); i++) {
+        free(kv_A(od->kv_widpos, i));
+    }
+    kv_destroy(od->kv_widpos);
+    kh_destroy(UNIQWID, od->kh_uniqwid);
+
     for (int i = 0; i<si->map->num_facets; i++) {
         kv_destroy(od->facet_data[i]);
     }
@@ -190,8 +441,9 @@ static inline void index_number(struct sindex *si, int priority, double d) {
     mdb_put(si->txn, si->num_dbi[priority], &key, &data, 0);
 }
 
-static void index_boolean(struct sindex *si, int priority, bool b) {
-    update_boolid2bmap(si, b, priority, true);
+static inline void index_boolean(struct sindex *si, int priority, bool b) {
+    wid2bmap_add(si->boolid2bmap_dbi, si->wc->kh_boolid2bmap, si->txn, 
+                         b, si->wc->od.oid, priority);
 }
 
 /**
@@ -233,7 +485,70 @@ static inline void index_string_facet(struct sindex *si, const char *str, int pr
     // Store it in per obj data
     kv_push(uint32_t, od->facet_data[priority], facet_id);
     // Update facetid -> bitmap of all documents with this facet id
-    update_facetid2bmap(si, facet_id, priority, true);
+    wid2bmap_add(si->facetid2bmap_dbi, si->wc->kh_facetid2bmap, si->txn, 
+                         facet_id, od->oid, priority);
+}
+
+static void string_new_word_pos(word_pos_t *wp, void *data) {
+    struct analyzer_data *ad = data;
+    struct sindex *si = ad->si;
+    struct obj_data *od = &si->wc->od;
+    int p = ad->priority + 1;
+    int limit = wp->word.length >= LEVLIMIT ? LEVLIMIT : wp->word.length;
+
+    // Check if the word exists
+    uint32_t wid = dtrie_exists(si->trie, wp->word.chars, wp->word.length, od->twid);
+    if (wid == 0) {
+        // If it does not exist, insert it and update the top-level word ids
+        // mapping to include the newly added word id
+        wid = dtrie_insert(si->trie, wp->word.chars, wp->word.length, od->twid);
+        // Store top-level word id to word id mapping
+        for (int i = 0; i < limit; i++) {
+            wid2bmap_add(si->twid2widbmap_dbi, si->wc->kh_twid2widbmap, si->txn, 
+                         od->twid[i], wid, 0);
+            wid2bmap_add(si->twid2widbmap_dbi, si->wc->kh_twid2widbmap, si->txn, 
+                         od->twid[i], wid, p);
+        }
+    }
+
+    // Set the top-level wid to obj id mapping
+    for (int i = 0; i < limit; i++) {
+        wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2bmap, si->txn, 
+                     od->twid[i], od->oid, 0);
+        wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2bmap, si->txn, 
+                     od->twid[i], od->oid, p);
+    }
+
+    // Set the wid to obj id mapping
+    wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
+            wid, od->oid, 0);
+    wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
+            wid, od->oid, p);
+
+    // Store wid positions
+    wid_pos_t *widpos = malloc(sizeof(wid_pos_t));
+    widpos->wid = wid;
+    widpos->priority = ad->priority;
+    widpos->position = wp->position;
+    // Add it to the end of the list
+    kv_push(wid_pos_t *, od->kv_widpos, widpos);
+    // Add the word id to the hash set
+    int ret = 0;
+    khiter_t k = kh_put(UNIQWID, od->kh_uniqwid, wid, &ret);
+    if (ret == 1) {
+        kh_value(od->kh_uniqwid, k) = 1;
+    } else {
+        kh_value(od->kh_uniqwid, k) = kh_value(od->kh_uniqwid, k) + 1;
+    }
+}
+
+// TODO: better analyzer usage, configurable etc.,
+static void index_string(struct sindex *si, const char *str, int priority) {
+    struct analyzer_data ad;
+    ad.si = si;
+    ad.priority = priority;
+    struct analyzer *a = get_default_analyzer();
+    a->analyze_string_for_indexing(str, string_new_word_pos, &ad);
 }
 
 
@@ -255,6 +570,9 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
                 if (s->is_facet) {
                     index_string_facet(si, str, s->f_priority);
                 }
+                if (s->is_indexed) {
+                    index_string(si, str, s->i_priority);
+                }
             }
             break;
             case F_STRLIST: {
@@ -266,6 +584,9 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
                     const char *str = json_string_value(js);
                     if (s->is_facet) {
                         index_string_facet(si, str, s->f_priority);
+                    }
+                    if (s->is_indexed) {
+                        index_string(si, str, s->i_priority);
                     }
                 }
             }
@@ -293,6 +614,7 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
                         index_number(si, s->i_priority, d);
                     }
                     // TODO: Decide on how to store arrays in objdata and index
+                    // Probably the same way we handle facets?
                 }
             }
             break;
@@ -332,8 +654,7 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
 
 
 /* Entry point to parse and index an object, this assumes that 
- * the write cache is ready 
- * */
+ * the write cache is ready */
 static void si_add_object(struct sindex *si, json_t *j) {
     // Get the oid from the object, this was previously set when
     // adding the object to sdata
@@ -348,10 +669,8 @@ static void si_add_object(struct sindex *si, json_t *j) {
     sindex_store_objdata(si);
 }
 
-/**
- * Adds one or more objects to the shard index.  This parses the input and updates
- * the various num / string / facet dbis.
- */
+/* Adds one or more objects to the shard index.  This parses the input and updates
+ * the various num / string / facet dbis. */
 void sindex_add_objects(struct sindex *si, json_t *j) {
     // Make sure we are ready to index these objects
     if (UNLIKELY((!j))) return;
@@ -446,6 +765,14 @@ struct sindex *sindex_new(struct shard *shard) {
     mdb_dbi_open(si->txn, DBI_FACETID2STR, MDB_CREATE|MDB_INTEGERKEY, &si->facetid2str_dbi);
     mdb_dbi_open(si->txn, DBI_FACETID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->facetid2bmap_dbi);
     mdb_dbi_open(si->txn, DBI_BOOLID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->boolid2bmap_dbi);
+    mdb_dbi_open(si->txn, DBI_TWID2WIDBMAP, MDB_CREATE|MDB_INTEGERKEY, &si->twid2widbmap_dbi);
+    mdb_dbi_open(si->txn, DBI_TWID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->twid2bmap_dbi);
+    mdb_dbi_open(si->txn, DBI_WID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->wid2bmap_dbi);
+    mdb_dbi_open(si->txn, DBI_OID2FNDATA, MDB_CREATE|MDB_INTEGERKEY, &si->oid2fndata_dbi);
+    mdb_dbi_open(si->txn, DBI_OID2WPOS, MDB_CREATE|MDB_INTEGERKEY, &si->oid2wpos_dbi);
+
+    strcat(path, "/dtrie.db");
+    si->trie = dtrie_new(path, si->boolid2bmap_dbi, si->txn);
  
     mdb_txn_commit(si->txn);
     return si;

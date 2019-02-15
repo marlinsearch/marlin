@@ -77,9 +77,12 @@
 #define J_NUMBERS       "numbers"
 #define J_BOOLS         "booleans"
 #define J_FACETS        "facets"
-#define J_NUM_FIELDS    "numFields"
+#define J_NUM_FIELDS     "numFields"
 #define J_INDEX_PRIORITY "indexPrority"
 #define J_FACET_PRIORITY "facetPriority"
+
+// Query attributes
+#define J_QUERY         "q"
 
 #endif
 

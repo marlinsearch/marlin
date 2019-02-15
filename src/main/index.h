@@ -48,7 +48,8 @@ struct index_cfg {
  * This is an index, which is analogous to a table
  * in a database.  An index belongs to an app as 
  * defined in app.h.  Each index contains one or more
- * shards as defined in shard.h*/
+ * shards as defined in shard.h
+ * */
 struct index {
     char name[MAX_INDEX_NAME];
     struct app *app;

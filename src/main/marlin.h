@@ -13,6 +13,7 @@ struct marlin {
     char ssl_cert[PATH_MAX];
     char ssl_key[PATH_MAX];
     int  num_threads;
+    int  num_processors;
     int  port;
     bool https;
     kvec_t(struct app *) apps;

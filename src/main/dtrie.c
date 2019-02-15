@@ -12,6 +12,8 @@
 #include <string.h>
 #include "platform.h"
 #include "dtrie.h"
+#include "mlog.h"
+#include "common.h"
 
 /* Size of node for a given type */
 static const int node_size[NS_MAX] = {0, 16,  32,  64, 128, 256, 512, 1024, 4096};
@@ -126,6 +128,7 @@ static struct dnode *create_new_node(struct dtrie *dt, NTYPE type, struct dnode_
             offset += node_size[type];
             bmap_add(&dt->freemaps[type], offset);
         }
+        dt->freemap_dirty[type] = 1;
 
     } else {
         int ns = type - NS_MAX;
@@ -165,6 +168,7 @@ static struct dnode *get_free_node(struct dtrie *dt, NTYPE type, struct dnode_id
             nid->offset = foffset;
             // Remove the id from freemap
             bmap_remove(&dt->freemaps[type], foffset);
+            dt->freemap_dirty[type] = 1;
             uint8_t *nptr = (uint8_t *)get_node_from_nodeid(dt, nid);
             init_node(dt, nptr, type);
             return (struct dnode *)nptr;
@@ -303,6 +307,7 @@ static void upsize_node(struct node_iter *iter) {
     // Do not bother about mega nodes, they are very very rare
     if (LIKELY(type < NS_MAX)) {
         bmap_add(&iter->trie->freemaps[n->type], offset);
+        iter->trie->freemap_dirty[n->type] = 1;
         iter->trie->meta->free_nodes[n->type]++;
         iter->trie->meta->used_nodes[n->type]--;
     }
@@ -460,9 +465,51 @@ uint32_t dtrie_insert(struct dtrie *dt, const CHR *str, int slen, uint32_t *twid
     return wid;
 }
 
+void dtrie_write_start(struct dtrie *dt) {
+    memset(&dt->freemap_dirty[0], 0, sizeof(dt->freemap_dirty));
+}
+
+static void store_freemap(struct bmap *b, uint64_t fid, MDB_dbi dbi, MDB_txn *txn) {
+    // First find total length
+    uint32_t mlen = bmap_get_dumplen(b);
+    MDB_val key, data;
+    key.mv_size = sizeof(uint64_t);
+    key.mv_data = &fid;
+    data.mv_size = mlen;
+    int rc = mdb_put(txn, dbi, &key, &data, MDB_RESERVE);
+    if (rc != 0) {
+        M_ERR("MDB reserve failure freemap %d %u", rc, mlen);
+        return;
+    }
+    uint16_t *buf = data.mv_data;
+    bmap_dump(b, buf);
+}
+
+static void dtrie_load_freemaps(struct dtrie *dt, MDB_dbi dbi, MDB_txn *txn) {
+    for (int i = 0; i < NS_MAX; i++) {
+        uint64_t fid = IDPRIORITY(0xFFFFFFFF, i);
+        MDB_val key, data;
+        key.mv_size = sizeof(uint64_t);
+        key.mv_data = &fid;
+        int rc = mdb_get(txn, dbi, &key, &data);
+        if (rc == 0) {
+            uint16_t *buf = data.mv_data;
+            bmap_load(&dt->freemaps[i], buf);
+        }
+    }
+}
+
+void dtrie_write_end(struct dtrie *dt, MDB_dbi dbi, MDB_txn *txn) {
+    for (int i = 0; i < NS_MAX; i++) {
+        if (dt->freemap_dirty[i]) {
+            uint64_t fid = IDPRIORITY(0xFFFFFFFF, i);
+            store_freemap(&dt->freemaps[i], fid, dbi, txn);
+        }
+    }
+}
 
 /* Creates a new dtrie or loads an existing dtrie on path */
-struct dtrie *dtrie_new(const char *path) {
+struct dtrie *dtrie_new(const char *path, MDB_dbi dbi, MDB_txn *txn) {
 
     struct dtrie *dt = NULL;
     int fd = open(path, O_RDWR | O_CREAT, (mode_t)0600);
@@ -524,7 +571,9 @@ struct dtrie *dtrie_new(const char *path) {
         dt->root = (struct dnode *)(dt->map + dt->meta->root_offset);
     }
     dt->freemaps = calloc(NS_MAX, sizeof(struct bmap));
-    /* TODO: Load all freemaps */
+    // Load freemaps
+    dtrie_load_freemaps(dt, dbi, txn);
+
     return dt;
 
 file_error:
