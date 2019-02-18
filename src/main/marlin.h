@@ -21,6 +21,7 @@ struct marlin {
 
 extern struct marlin *marlin;
 extern threadpool_t *index_pool;
+extern threadpool_t *search_pool;
 
 void load_settings(const char *settings_path);
 void init_marlin(void);

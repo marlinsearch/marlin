@@ -31,7 +31,7 @@ struct add_obj_tdata {
 void worker_add_process(void *w) {
     struct add_obj_tdata *add = w;
     shard_add_objects(kv_A(add->index->shards, add->shard_idx), add->sh_j);
-    printf("Shard worker %d len %lu\n", add->shard_idx, json_array_size(add->sh_j));
+    M_INFO("Shard worker %d len %lu", add->shard_idx, json_array_size(add->sh_j));
     json_decref(add->sh_j);
     worker_done(add->tdata);
 }
@@ -468,9 +468,14 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
             struct analyzer *a = get_default_analyzer();
             a->analyze_string_for_search(qstr, query_string_word_cb, q);
         }
+        // TODO: Read filters and other query related configuration
+        execute_query(q);
     }
 
-    query_free(q);
+    if (q) {
+        query_free(q);
+    }
+    // TODO: Send query response
     return strdup(J_SUCCESS);
 }
 
@@ -627,6 +632,9 @@ struct index *index_new(const char *name, struct app *a, int num_shards) {
     // Create index path if not present
     char path[PATH_MAX];
     snprintf(path, sizeof(path), "%s/%s/%s", marlin->db_path, a->name, in->name);
+    mkdir(path, 0775);
+    // create data path to store index data
+    snprintf(path, sizeof(path), "%s/%s/%s/data", marlin->db_path, a->name, in->name);
     mkdir(path, 0775);
     // Load / Update stored index information if any
     index_load_info(in);

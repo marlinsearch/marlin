@@ -8,6 +8,7 @@
 struct shard {
     uint16_t shard_id;
     char idx_name[PATH_MAX];
+    char base_path[PATH_MAX];
     struct index *index;
     struct sdata *sdata;
     struct sindex *sindex;

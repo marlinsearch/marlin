@@ -722,8 +722,7 @@ void sindex_delete(struct sindex *si) {
     char path[PATH_MAX];
     struct shard *shard = si->shard;
     // Get the shard_data path
-    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d/%s", marlin->db_path, shard->index->app->name, 
-             shard->index->name, "s", shard->shard_id, shard->idx_name);
+    snprintf(path, sizeof(path), "%s/%s", shard->base_path, shard->idx_name);
  
     sindex_free(si);
 
@@ -743,12 +742,10 @@ void sindex_free(struct sindex *si) {
 struct sindex *sindex_new(struct shard *shard) {
     struct sindex *si = calloc(1, sizeof(struct sindex));
     si->shard = shard;
-    struct index *in = shard->index;
 
     // Create path necessary to store shard index
     char path[PATH_MAX];
-    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d/%s", marlin->db_path, in->app->name, 
-             in->name, "s", shard->shard_id, shard->idx_name);
+    snprintf(path, sizeof(path), "%s/%s", shard->base_path, shard->idx_name);
     mkdir(path, 0775);
 
     // Initialize mdb access

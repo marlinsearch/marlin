@@ -15,6 +15,7 @@
 
 struct marlin *marlin;
 threadpool_t *index_pool;
+threadpool_t *search_pool;
 
 /**
  * Marlin uses a number of threadpools to perform its operations.
@@ -32,6 +33,8 @@ static void setup_thread_pools(void) {
      * Total number of all shards of all indices.
      * */
     index_pool = threadpool_create(marlin->num_processors, marlin->num_processors * 256, 0);
+    search_pool = threadpool_create(((marlin->num_processors * 3)/2) + 1, 
+                                      marlin->num_processors * 256, 0);
 }
 
 // Load marlin settings
@@ -275,6 +278,7 @@ void init_marlin(void) {
 void shutdown_marlin(void) {
     M_INFO("Shutting down !");
     threadpool_destroy(index_pool, 0);
+    threadpool_destroy(search_pool, 0);
     // Deregister callbacks
     deregister_api_callback(marlin->appid, marlin->apikey, "GET", URL_MARLIN);
     deregister_api_callback(marlin->appid, marlin->apikey, "GET", URL_APPS);

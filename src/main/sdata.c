@@ -148,7 +148,7 @@ void sdata_delete(struct sdata *sd) {
     char path[PATH_MAX];
     struct shard *shard = sd->shard;
     // Get the shard_data path
-    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d/data", marlin->db_path, shard->index->app->name, shard->index->name, "s", shard->shard_id);
+    snprintf(path, sizeof(path), "%s/data", shard->base_path);
     // Free shard data which closes the environment and dbis
     sdata_free(sd);
     char fpath[PATH_MAX];
@@ -170,7 +170,7 @@ struct sdata *sdata_new(struct shard *shard) {
 
     // Create path necessary to store shard data
     char path[PATH_MAX];
-    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d/data", marlin->db_path, in->app->name, in->name, "s", shard->shard_id);
+    snprintf(path, sizeof(path), "%s/data", shard->base_path);
     mkdir(path, 0775);
  
     // Initialize mdb access

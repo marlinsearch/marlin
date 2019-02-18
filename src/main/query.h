@@ -2,6 +2,7 @@
 #define __QUERY_H__
 
 #include "kvec.h"
+#include "index.h"
 #include "analyzer.h"
 
 struct query {
@@ -12,5 +13,6 @@ struct query {
 
 struct query *query_new(struct index *in);
 void query_free(struct query *q);
+char *execute_query(struct query *q);
 
 #endif

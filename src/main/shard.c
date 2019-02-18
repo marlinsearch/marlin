@@ -7,9 +7,7 @@
 
 static void shard_save_info(struct shard *s) {
     char path[PATH_MAX];
-    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d/%s", marlin->db_path, 
-             s->index->app->name, s->index->name, "s", s->shard_id, SHARD_FILE);
- 
+    snprintf(path, sizeof(path), "%s/%s", s->base_path, SHARD_FILE);
     FILE *f = fopen(path, "w");
     if (!f) {
         M_ERR("Failed to save datastore index name");
@@ -22,8 +20,7 @@ static void shard_save_info(struct shard *s) {
 // Loads shard information, this gives the actual shard index file path
 static void shard_load_info(struct shard *s) {
     char path[PATH_MAX];
-    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d/%s", marlin->db_path, 
-             s->index->app->name, s->index->name, "s", s->shard_id, SHARD_FILE);
+    snprintf(path, sizeof(path), "%s/%s", s->base_path, SHARD_FILE);
     json_t *json;
     json_error_t error;
     json = json_load_file(path, 0, &error);
@@ -35,7 +32,7 @@ static void shard_load_info(struct shard *s) {
 }
 
 void shard_set_mapping(struct shard *s, const struct mapping *m) {
-    M_INFO("Shard mapping set");
+    M_DBG("Shard mapping set");
     // TODO: This should be a function in sindex, 
     // Set current index for removal and create a new sindex and
     // set mapping.
@@ -80,15 +77,9 @@ void shard_delete(struct shard *s) {
     // Now take car of the search index
     sindex_delete(s->sindex);
     s->sindex = NULL;
-
-    // Form the shard path, we need this to delete
-    struct index *in = s->index;
-    char path[PATH_MAX];
-    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d", marlin->db_path, 
-             in->app->name, in->name, "s", s->shard_id);
     // Free the shard
     shard_free(s);
-    rmdir(path);
+    rmdir(s->base_path);
 }
 
 struct shard *shard_new(struct index *in, uint16_t shard_id) {
@@ -96,10 +87,9 @@ struct shard *shard_new(struct index *in, uint16_t shard_id) {
     s->index = in;
     s->shard_id = shard_id;
     // Create shard path if required
-    char path[PATH_MAX];
-    snprintf(path, sizeof(path), "%s/%s/%s/%s_%d", marlin->db_path, 
+    snprintf(s->base_path, sizeof(s->base_path), "%s/%s/%s/data/%s_%d", marlin->db_path, 
              in->app->name, in->name, "s", shard_id);
-    mkdir(path, 0775);
+    mkdir(s->base_path, 0775);
     shard_load_info(s);
     if (strlen(s->idx_name) == 0) {
         char idx[16];
