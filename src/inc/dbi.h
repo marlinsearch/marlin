@@ -16,6 +16,7 @@
 #define DBI_WID2BMAP        "wid2bmap_dbi"
 #define DBI_OID2FNDATA      "oid2fndata_dbi"
 #define DBI_OID2WPOS        "oid2wpos_dbi"
+#define DBI_PHRASE          "phrase_dbi"
 
 #endif
 

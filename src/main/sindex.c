@@ -74,6 +74,7 @@ static void si_write_start(struct sindex *si) {
     si->wc->kh_wid2bmap = kh_init(WID2MBMAP);
     si->wc->kh_twid2bmap = kh_init(WID2MBMAP);
     si->wc->kh_twid2widbmap = kh_init(WID2MBMAP);
+    si->wc->kh_phrasebmap = kh_init(WID2MBMAP);
  
     // Setup per obj data
     struct obj_data *od = &si->wc->od;
@@ -147,6 +148,12 @@ static void si_write_end(struct sindex *si) {
         store_id2mbmap(mbmap, si->wid2bmap_dbi, si->txn);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_wid2bmap);
+    // Store phrase to objid mapping
+    kh_foreach_value(si->wc->kh_phrasebmap, mbmap, {
+        store_id2mbmap(mbmap, si->phrase_dbi, si->txn);
+    });
+    kh_destroy(WID2MBMAP, si->wc->kh_phrasebmap);
+
 
     // Store facet id to string mappings
     uint32_t facet_id;
@@ -540,6 +547,14 @@ static void string_new_word_pos(word_pos_t *wp, void *data) {
     } else {
         kh_value(od->kh_uniqwid, k) = kh_value(od->kh_uniqwid, k) + 1;
     }
+    // If we are not the first word, add the wid pair to phrase dbi
+    if (LIKELY(ad->prev_wid)) {
+        // TODO : Uncomment once you figure out how to store phrase for each priority
+        // and when you really need phrase search / split word search
+        //wid2bmap_add(si->phrase_dbi, si->wc->kh_phrasebmap, si->txn,
+        //        ad->prev_wid, od->oid, wid);
+    }
+    ad->prev_wid = wid;
 }
 
 // TODO: better analyzer usage, configurable etc.,
@@ -547,6 +562,7 @@ static void index_string(struct sindex *si, const char *str, int priority) {
     struct analyzer_data ad;
     ad.si = si;
     ad.priority = priority;
+    ad.prev_wid = 0;
     struct analyzer *a = get_default_analyzer();
     a->analyze_string_for_indexing(str, string_new_word_pos, &ad);
 }
@@ -767,6 +783,7 @@ struct sindex *sindex_new(struct shard *shard) {
     mdb_dbi_open(si->txn, DBI_WID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->wid2bmap_dbi);
     mdb_dbi_open(si->txn, DBI_OID2FNDATA, MDB_CREATE|MDB_INTEGERKEY, &si->oid2fndata_dbi);
     mdb_dbi_open(si->txn, DBI_OID2WPOS, MDB_CREATE|MDB_INTEGERKEY, &si->oid2wpos_dbi);
+    mdb_dbi_open(si->txn, DBI_PHRASE, MDB_CREATE|MDB_INTEGERKEY, &si->phrase_dbi);
 
     strcat(path, "/dtrie.db");
     si->trie = dtrie_new(path, si->boolid2bmap_dbi, si->txn);

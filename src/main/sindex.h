@@ -39,6 +39,7 @@ struct write_cache {
     khash_t(WID2MBMAP) *kh_wid2bmap;        // Word id to obj id bmap
     khash_t(WID2MBMAP) *kh_twid2bmap;       // Top-Level word id to obj id bmap
     khash_t(WID2MBMAP) *kh_twid2widbmap;    // Top-level word id to wid bmap
+    khash_t(WID2MBMAP) *kh_phrasebmap;      // Adjacent word id to obj id bmap
 
     // Per object index info
     struct obj_data od;
@@ -67,12 +68,14 @@ struct sindex {
     MDB_dbi wid2bmap_dbi;       // Word id to bitmap of objids containing that wid
     MDB_dbi oid2fndata_dbi;     // Objid to facet / numeric data 
     MDB_dbi oid2wpos_dbi;       // Objid to word freq, position data
+    MDB_dbi phrase_dbi;         // Phrase query dbi, adjacent wids mapped to objs containing the pair
     MDB_dbi num_dbi[MAX_FIELDS];
 };
 
 struct analyzer_data {
     struct sindex *si;
     int priority;
+    uint32_t prev_wid;
 };
 
 typedef struct __attribute__((__packed__)) {

@@ -463,11 +463,14 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
 
     if (jq && json_is_object(jq)) {
         q = query_new(in);
+        // TODO: read query cfg before reading the query string
+
         const char *qstr = json_string_value(json_object_get(jq, J_QUERY));
         if (qstr) {
             struct analyzer *a = get_default_analyzer();
             a->analyze_string_for_search(qstr, query_string_word_cb, q);
         }
+
         // TODO: Read filters and other query related configuration
         execute_query(q);
     }
