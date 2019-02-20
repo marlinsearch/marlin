@@ -508,6 +508,22 @@ void dtrie_write_end(struct dtrie *dt, MDB_dbi dbi, MDB_txn *txn) {
     }
 }
 
+void dtrie_free(struct dtrie *dt) {
+    WRLOCK(&dt->trie_lock);
+    for (int i=1; i<NS_MAX; i++) {
+        bmap_free_containers(&dt->freemaps[i]);
+    }
+    free(dt->freemaps);
+    if (dt->map) {
+        munmap(dt->map, MAPSIZE);
+    }
+    if (dt->fd >= 0) {
+        close(dt->fd);
+    }
+    UNLOCK(&dt->trie_lock);
+    free(dt);
+}
+
 /* Creates a new dtrie or loads an existing dtrie on path */
 struct dtrie *dtrie_new(const char *path, MDB_dbi dbi, MDB_txn *txn) {
 

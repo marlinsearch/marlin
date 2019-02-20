@@ -752,6 +752,7 @@ void sindex_clear(struct sindex *si) {
 
 void sindex_free(struct sindex *si) {
     mdb_env_close(si->env);
+    dtrie_free(si->trie);
     free(si);
 }
 

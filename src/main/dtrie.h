@@ -87,6 +87,7 @@ uint32_t dtrie_exists(struct dtrie *dt, const CHR *str, int slen, uint32_t *twid
 void dump_dtrie_stats(struct dtrie *dt);
 void dtrie_write_start(struct dtrie *dt);
 void dtrie_write_end(struct dtrie *dt, MDB_dbi dbi, MDB_txn *txn);
+void dtrie_free(struct dtrie *dt);
 
 #endif
 

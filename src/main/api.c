@@ -67,7 +67,6 @@ static void on_sigterm(int signo) {
         /* initialization hasn't completed yet, exit right away */
         exit(0);
     }
-    exit(0);
     M_ERR("sigterm handler, initiating shutdown");
     notify_all_threads();
 }
