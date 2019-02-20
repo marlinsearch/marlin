@@ -1,15 +1,8 @@
 #ifndef __ANALYZER_H__
 #define __ANALYZER_H__
-#include <utf8proc.h>
+#include "word.h"
 
 #define MAX_ANALYZER_NAME  256
-
-typedef utf8proc_int32_t chr_t; 
-
-typedef struct word {
-    chr_t *chars;
-    int length;
-} word_t;
 
 typedef struct word_pos {
     word_t word;
