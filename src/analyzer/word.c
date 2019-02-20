@@ -24,7 +24,7 @@ word_t *wordadd(const word_t *a, const word_t *b) {
     w->length = a->length + b->length;
     w->chars = malloc(sizeof(chr_t) * w->length);
     memcpy(w->chars, a->chars, sizeof(chr_t) * a->length);
-    memcpy(&w->chars[a->length], b->chars, sizeof(chr_t) * a->length);
+    memcpy(&w->chars[a->length], b->chars, sizeof(chr_t) * b->length);
     return w;
 }
 
@@ -44,3 +44,9 @@ void worddump(const word_t *a) {
     printf("]\n");
 }
 
+void wordfree(word_t *w) {
+    if (w) {
+        free(w->chars);
+        free(w);
+    }
+}

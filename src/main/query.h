@@ -27,8 +27,8 @@ typedef enum query_type {
 } QUERY_TYPE;
 
 typedef enum typos_type {
-    TYPO_HANDLE,
-    TYPO_IGNORE,
+    TYPO_OK,
+    TYPO_NONE,
     TYPO_MAX
 } TYPO_TYPE;
 
@@ -46,8 +46,10 @@ struct query_cfg {
 
 struct query {
     struct index *in;
+    char *text;
     kvec_t(word_t *) words;
     int num_words;
+    kvec_t(term_t *) terms;
 
     // Query config
     struct query_cfg cfg;
@@ -57,5 +59,6 @@ struct query *query_new(struct index *in);
 void query_free(struct query *q);
 char *execute_query(struct query *q);
 void generate_query_terms(struct query *q);
+void dump_query(struct query *q);
 
 #endif

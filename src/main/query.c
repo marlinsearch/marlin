@@ -23,17 +23,145 @@ char *execute_query(struct query *q) {
     return "";
 }
 
+/* Generates query terms for a given query.  THis is specific to the ranking model 
+ * used, so this will get moved in the near future
+ * TODO: move it to the appropriate ranking model */
+void generate_query_terms(struct query *q) {
+    // Do not bother looking at query with no words
+    if (q->num_words == 0) return;
+
+    // Single word maps to a single term
+    if (q->num_words == 1) {
+        term_t *t = calloc(1, sizeof(term_t));
+        t->word = worddup(kv_A(q->words, 0));
+        // If the query needs a prefix search, do that
+        if (q->cfg.prefix != PREFIX_NONE) {
+            t->prefix = 1;
+        }
+        // If typos are allowed by the query and if we are above the min typo check
+        // length, enable search with typos
+        if ((q->cfg.typos == TYPO_OK) && (t->word->length > LEVLIMIT)) {
+            t->typos = 1;
+        }
+        kv_push(term_t *, q->terms, t);
+        return;
+    }
+
+    // 2 words, generates 3 terms [w1, w2, w1+w2 (no typos)]
+    if (q->num_words == 2) {
+        // Add the first 2 words as search terms
+        for (int i = 0; i < 2; i ++) {
+            term_t *t = calloc(1, sizeof(term_t));
+            t->word = worddup(kv_A(q->words, i));
+            // If the query needs a prefix search, do that
+            if (q->cfg.prefix == PREFIX_ALL) {
+                t->prefix = 1;
+            } else if (q->cfg.prefix == PREFIX_LAST && i == 1) {
+                t->prefix = 1;
+            }
+            // If typos are allowed by the query and if we are above the min typo check
+            // length, enable search with typos
+            if ((q->cfg.typos == TYPO_OK) && (t->word->length > LEVLIMIT)) {
+                t->typos = 1;
+            }
+            kv_push(term_t *, q->terms, t);
+        }
+
+        // The third term is w1 + w2 but no typos are allowed, prefix search may be ok
+        term_t *t = calloc(1, sizeof(term_t));
+        t->word = wordadd(kv_A(q->words, 0), kv_A(q->words, 1));
+        t->typos = 0;
+        if (q->cfg.prefix != PREFIX_NONE) {
+            t->prefix = 1;
+        }
+        kv_push(term_t *, q->terms, t);
+        return;
+    }
+
+    /* Anything more than 2 words is handled differently. 
+     * Consider the words [w1, w2, w3].  The following terms are 
+     * generated.
+     * First the words themselves
+     * [w1, w2, w3]
+     * Then the adjacent words with no typos allowed
+     * [w1+w2, w2+w3]
+     * Finally all words combined
+     * [w1+w2+w3]
+     * */
+    // This is the combined term
+    term_t *ct = calloc(1, sizeof(term_t));
+    ct->word = wordnew();
+    ct->typos = 0;
+    if (q->cfg.prefix != PREFIX_NONE) {
+        ct->prefix = 1;
+    }
+
+    for (int i = 0; i < q->num_words; i++) {
+        // Every word ends up in the combined term, do that
+        wordcat(ct->word, kv_A(q->words, i));
+
+        // Now create a term for the current word
+        term_t *t = calloc(1, sizeof(term_t));
+        t->word = worddup(kv_A(q->words, i));
+        // If typos are ok, set it
+        if ((q->cfg.typos == TYPO_OK) && (t->word->length > LEVLIMIT)) {
+            t->typos = 1;
+        }
+        // If the query needs a prefix search, do that
+        if (q->cfg.prefix == PREFIX_ALL) {
+            t->prefix = 1;
+        } else if (q->cfg.prefix == PREFIX_LAST && i == (q->num_words - 1)) {
+            t->prefix = 1;
+        }
+        kv_push(term_t *, q->terms, t);
+
+        // Now create a term for current word + next word, which is not 
+        // required for the last word
+        if (i != (q->num_words - 1)) {
+            term_t *tt = calloc(1, sizeof(term_t));
+            tt->word = wordadd(kv_A(q->words, i), kv_A(q->words, i+1));
+            // typos not allowed and prefix only for last pair
+            if ((q->cfg.prefix != PREFIX_NONE) && (i + 2 == q->num_words)) {
+                tt->prefix = 1;
+            }
+            kv_push(term_t *, q->terms, tt);
+        }
+    }
+    // Finally add the all words combined term
+    kv_push(term_t *, q->terms, ct);
+}
+
 struct query *query_new(struct index *in) {
     struct query *q = malloc(sizeof(struct query));
     q->num_words = 0;
     q->in = in;
     kv_init(q->words);
+    kv_init(q->terms);
     return q;
 }
 
 void query_free(struct query *q) {
     //TODO: free word inside words
     kv_destroy(q->words);
+    kv_destroy(q->terms);
     free(q);
+}
+
+static void dump_term(term_t *t) {
+    worddump(t->word);
+    printf("Prefix %d Typos %d\n", t->prefix, t->typos);
+}
+
+void dump_query(struct query *q) {
+    printf("Query text %s\n", q->text);
+    printf("\nQuery words %d\n", q->num_words);
+    for (int i = 0; i < q->num_words; i++) {
+        worddump(kv_A(q->words, i));
+    }
+    printf("\nQuery terms %lu\n", kv_size(q->terms));
+    for (int i = 0; i < kv_size(q->terms); i++) {
+        dump_term(kv_A(q->terms, i));
+    }
+    printf("\n");
 }
 

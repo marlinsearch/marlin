@@ -15,6 +15,7 @@ word_t *worddup(const word_t *a);
 word_t *wordadd(const word_t *a, const word_t *b);
 word_t *wordcat(word_t *dest, const word_t *src);
 void worddump(const word_t *a);
+void wordfree(word_t *w);
 
 #endif
 

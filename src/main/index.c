@@ -466,10 +466,13 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
         // TODO: read query cfg before reading the query string
 
         const char *qstr = json_string_value(json_object_get(jq, J_QUERY));
+        q->text = strdup(qstr);
         if (qstr) {
             struct analyzer *a = get_default_analyzer();
             a->analyze_string_for_search(qstr, query_string_word_cb, q);
         }
+        generate_query_terms(q);
+        dump_query(q);
 
         // TODO: Read filters and other query related configuration
         execute_query(q);
