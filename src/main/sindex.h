@@ -7,6 +7,7 @@
 #include "khash.h"
 #include "kvec.h"
 #include "dtrie.h"
+#include "squery.h"
 
 KHASH_MAP_INIT_INT(FACETID2STR, char *) // Facet id to string mapping
 KHASH_MAP_INIT_INT64(WID2MBMAP, struct mbmap *) // Word id to mbmap

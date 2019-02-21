@@ -180,7 +180,7 @@ static struct dnode *get_free_node(struct dtrie *dt, NTYPE type, struct dnode_id
     return n;
 }
 
-static int binary_search(struct dnode *n, struct dnode_ptr *np, const CHR c) {
+static int binary_search(struct dnode *n, struct dnode_ptr *np, const chr_t c) {
     int low = 0, high = n->num_child-1, middle;
     while (low <= high) {
         middle = (low+high)/2;
@@ -195,7 +195,7 @@ static int binary_search(struct dnode *n, struct dnode_ptr *np, const CHR c) {
     return -(low+1);
 }
 
-static inline struct dnode_id *binary_search_nodeid(struct dnode *n, CHR c) {
+static inline struct dnode_id *binary_search_nodeid(struct dnode *n, chr_t c) {
     struct dnode_ptr *np = n->child;
     int pos = binary_search(n, np, c);
     if (pos >= 0) {
@@ -204,7 +204,7 @@ static inline struct dnode_id *binary_search_nodeid(struct dnode *n, CHR c) {
     return NULL;
 }
 
-static struct dnode *node_get_child(struct dtrie *dt, struct dnode *n, CHR c, struct dnode_id *cnid) {
+static struct dnode *node_get_child(struct dtrie *dt, struct dnode *n, chr_t c, struct dnode_id *cnid) {
     struct dnode_id *nid = binary_search_nodeid(n, c);
     if (nid) {
         *cnid = *nid;
@@ -247,8 +247,8 @@ static inline int node_wid_size(struct dnode *n) {
 }
 
 // Given a node, insert a node_ptr to point to a child node
-static void insert_nodeid_in_node(struct dnode *n, struct dnode_id *nid, CHR c) {
-    // Binary search and put CHR in the correct place together with its nid.
+static void insert_nodeid_in_node(struct dnode *n, struct dnode_id *nid, chr_t c) {
+    // Binary search and put chr_t in the correct place together with its nid.
     // Increase numchild ++
     struct dnode_ptr *np = n->child;
     int pos = binary_search(n, np, c);
@@ -273,7 +273,7 @@ static void insert_nodeid_in_node(struct dnode *n, struct dnode_id *nid, CHR c) 
 }
 
 // Replace the node in a node for char c with nid
-static void replace_nodeid_in_node(struct dnode *n, struct dnode_id *nid, CHR c) {
+static void replace_nodeid_in_node(struct dnode *n, struct dnode_id *nid, chr_t c) {
     // Binary search and put chr in the correct place.
     struct dnode_ptr *np = n->child;
     int pos = binary_search(n, np, c);
@@ -326,7 +326,7 @@ static void upsize_node(struct node_iter *iter) {
 }
 
 // This changes node size or splits nodes or adds new nodes.
-static void add_nodeid_under_node(struct node_iter *iter, const CHR c, struct dnode_id *nid) {
+static void add_nodeid_under_node(struct node_iter *iter, const chr_t c, struct dnode_id *nid) {
     struct dnode *n = iter->node;
 
     if (can_child_be_added(n)) {
@@ -340,10 +340,10 @@ static void add_nodeid_under_node(struct node_iter *iter, const CHR c, struct dn
 }
 
 
-static void node_add_child(struct node_iter *iter, CHR c) {
+static void node_add_child(struct node_iter *iter, chr_t c) {
     struct dnode_id nid;
     struct dnode *n = get_free_node(iter->trie, NS_DEFAULT, &nid);
-    // Adds the CHR c under 
+    // Adds the chr_t c under 
     add_nodeid_under_node(iter, c, &nid);
     iter->parent = iter->node;
     iter->node = n;
@@ -351,11 +351,11 @@ static void node_add_child(struct node_iter *iter, CHR c) {
 }
 
 /* Adds all nodes to make the word @str.  Nodes are added only if they do not exist already */
-static struct dnode *add_path_nodes(struct node_iter *iter, const CHR *str, int slen, uint32_t *twids) {
-    // Take one CHR at a time
+static struct dnode *add_path_nodes(struct node_iter *iter, const chr_t *str, int slen, uint32_t *twids) {
+    // Take one chr_t at a time
     for (int i=0; i<slen; i++) {
         struct dnode_id cnid;
-        // Try to find the node for the CHR
+        // Try to find the node for the chr_t
         struct dnode *next = node_get_child(iter->trie, iter->node, str[i], &cnid);
         // The node may already exist, we just update node_iter to continue traversal
         if (next) {
@@ -392,8 +392,21 @@ void dump_dtrie_stats(struct dtrie *dt) {
     printf("Size of node %lu ptr %lu\n", sizeof(struct dnode), sizeof(struct dnode_ptr));
 }
 
+static struct dnode *lookup_word_node(struct dtrie *dt, const chr_t *str, int slen) {
+    struct dnode *current = dt->root;
+    struct dnode_id nid;
+    for (int i=0; i<slen; i++) {
+        struct dnode *next = node_get_child(dt, current, str[i], &nid);
+        if (next) {
+            current = next;
+        } else {
+            return NULL;
+        }
+    }
+    return current;
+}
 
-static uint32_t word_exists_under_root(struct dtrie *dt, const CHR *str, int slen, uint32_t *twids) {
+static uint32_t word_exists_under_root(struct dtrie *dt, const chr_t *str, int slen, uint32_t *twids) {
     struct dnode *current = dt->root;
     struct dnode_id nid;
     for (int i=0; i<slen; i++) {
@@ -410,7 +423,7 @@ static uint32_t word_exists_under_root(struct dtrie *dt, const CHR *str, int sle
     return get_wid(current);
 }
 
-uint32_t dtrie_exists(struct dtrie *dt, const CHR *str, int slen, uint32_t *twids) {
+uint32_t dtrie_exists(struct dtrie *dt, const chr_t *str, int slen, uint32_t *twids) {
     RDLOCK(&dt->trie_lock);
     uint32_t wid = word_exists_under_root(dt, str, slen, twids);
     UNLOCK(&dt->trie_lock);
@@ -430,9 +443,8 @@ static inline bool can_add_wid_for_node(struct dnode *n) {
 
 /* Inserts a word into the trie.  If word already exists, just returns the word id for the
  * existing word entry.  The first 3 top level wordids are set in twids */
-uint32_t dtrie_insert(struct dtrie *dt, const CHR *str, int slen, uint32_t *twids) {
+uint32_t dtrie_insert(struct dtrie *dt, const chr_t *str, int slen, uint32_t *twids) {
     // First grab a write lock
-    // TODO: Use a lock file instead?
     WRLOCK(&dt->trie_lock);
 
     /* node_iter is used while walking through a trie to store parent
@@ -521,6 +533,7 @@ void dtrie_free(struct dtrie *dt) {
         close(dt->fd);
     }
     UNLOCK(&dt->trie_lock);
+    DESTROYLOCK(&dt->trie_lock);
     free(dt);
 }
 
@@ -598,5 +611,184 @@ file_error:
     }
     printf("Failed to initialize dtrie !\n");
     return NULL;
+}
+
+/* Adds / Updates the result with a wid -> distance mapping */
+static void add_wordid_to_result(termresult_t *tr, uint32_t wid, int distance) {
+    khiter_t k;
+    // Set a high default value, update with a better distance if we arrive at one
+    int d = kh_get_val(WID2TYPOS, tr->wordids, wid, 0xFF);
+    if (distance < d) {
+        kh_set(WID2TYPOS, tr->wordids, wid, distance);
+    }
+}
+
+static void node_walk(struct dtrie *dt, struct dnode *d, termresult_t *tr, int distance) {
+    // See if we have a twid and use that if it exists
+    tr->twid = get_twid(d);
+    if (!tr->twid) {
+        // Add wid if any in the current node
+        uint32_t wid = get_wid(d);
+        if (wid) {
+            add_wordid_to_result(tr, wid, distance);
+        }
+        for (int i = 0; i < d->num_child; i++) {
+            struct dnode *dc = get_node_from_nodeid(dt, &d->child[i].nid);
+            node_walk(dt, dc, tr, distance);
+        }
+    }
+}
+
+/* Looksup toplevel word id, only to be used when word len is <= LEVLIMIT
+ * If it is a prefix match, we set the twid. The words containing this twid
+ * can be retrieve by the caller.  If it is not a prefix match, 
+ * we add wid if we find any */
+static void lookup_twid(struct dtrie *dt, term_t *t, termresult_t *tr) {
+    RDLOCK(&dt->trie_lock);
+    // First lookup the node for this word
+    struct dnode *d = lookup_word_node(dt, t->word->chars, t->word->length);
+    if (d) {
+        if (t->prefix) {
+            // For a prefix search, just set twid
+            tr->twid = get_twid(d);
+        } else {
+            // It is not a prefix search, do not set the twid
+            // instead add wid if any in the node
+            uint32_t wid = get_wid(d);
+            if (wid) {
+                add_wordid_to_result(tr, wid, 0);
+            }
+        }
+    }
+    UNLOCK(&dt->trie_lock);
+}
+
+static void lookup_notypo(struct dtrie *dt, term_t *t, termresult_t *tr) {
+    RDLOCK(&dt->trie_lock);
+    struct dnode *d = lookup_word_node(dt, t->word->chars, t->word->length);
+    if (d) {
+        if (t->prefix) {
+            node_walk(dt, d, tr, 0);
+        } else {
+            // It is not a prefix search, do not set the twid
+            // instead add wid if any in the node
+            uint32_t wid = get_wid(d);
+            if (wid) {
+                add_wordid_to_result(tr, wid, 0);
+            }
+        }
+    }
+    UNLOCK(&dt->trie_lock);
+}
+
+struct lev_data {
+    struct dtrie *dt;
+    word_t *word;
+    term_t *t;
+    termresult_t *tr;
+    int maxdist;
+};
+
+static void node_lev(struct lev_data *ld, struct dnode *d, int *prev_row, int *pprev_row, 
+                            chr_t c, chr_t pc, int depth) {
+
+    int size = ld->word->length + 1;
+    int *current_row = prev_row + size;
+    const chr_t *str = ld->word->chars;
+
+    current_row[0] = prev_row[0] + 1;
+    memset(&current_row[1], 0x0F, (size-1)*sizeof(unsigned int));
+    int lb = MAX((depth - ld->maxdist), 1);
+    int rb = MIN((depth + ld->maxdist + 1), size);
+    for (int i=lb; i<rb; i++) {
+        int ins_del = MIN(current_row[i-1]+1, prev_row[i]+1);
+        int repl = (str[i-1] == c)?prev_row[i-1]:(prev_row[i-1]+1);
+        current_row[i] = MIN(ins_del, repl);
+        // Damareu
+        if (i > 1 && depth > 1) {
+            if (str[i-1] == pc && str[i-2] == c) {
+                current_row[i] = MIN(current_row[i], str[i-1]==c? pprev_row[i-2]: pprev_row[i-2]+1);
+            }
+        }
+    }
+    uint8_t dist = current_row[size-1];
+    if (dist <= ld->maxdist) {
+        if (ld->t->prefix) {
+            if (depth >= (size-1)) {
+                node_walk(ld->dt, d, ld->tr, dist);
+                return;
+            } else {
+                if (get_wid(d)) {
+                    node_walk(ld->dt, d, ld->tr, dist);
+                }
+            }
+        } else  {
+            uint32_t wid = get_wid(d);
+            if (wid) {
+                add_wordid_to_result(ld->tr, wid, dist);
+            }
+        }
+    }
+
+    // If we have reached this far, let us check the children too
+    for (int i = 0; i < size; i++) {
+        if (current_row[i] <= ld->maxdist) {
+            for (int i = 0; i < d->num_child; i++) {
+                struct dnode*nd = get_node_from_nodeid(ld->dt, &d->child[i].nid);
+                node_lev(ld, nd, current_row, prev_row, d->child[i].c, c, depth+1);
+            }
+            break;
+        }
+    }
+}
+
+
+static void lookup_typo(struct dtrie *dt, term_t *t, termresult_t *tr) {
+    RDLOCK(&dt->trie_lock);
+    // Set the max distance based on word length
+    // TODO: Make word distance configurable and send during lookup request
+    int wlen = t->word->length;
+    int maxdist = (wlen > 7)?2:1;
+    // Do a Dam-Levenshtein lookup
+    struct lev_data ld;
+    ld.maxdist = maxdist;
+    ld.dt = dt;
+    ld.word = t->word;
+    ld.tr = tr;
+    ld.t = t;
+    int *current_row = malloc(((wlen + 1) * (wlen + 2) * 2) * sizeof(int));
+
+    for (int i = 0; i <= wlen; i++) {
+        current_row[i] = 1;
+    }
+
+    struct dnode *root = dt->root;
+    for (int i = 0; i < root->num_child; i++) {
+        struct dnode *d = get_node_from_nodeid(dt, &root->child[i].nid);
+        node_lev(&ld, d, current_row, NULL, root->child[i].c, 0, 1);
+    }
+
+    free(current_row);
+    UNLOCK(&dt->trie_lock);
+}
+
+struct termresult *dtrie_lookup_term(struct dtrie *dt, term_t *t) {
+    struct termresult *tr = calloc(1, sizeof(struct termresult));
+    tr->wordids = kh_init(WID2TYPOS);
+
+    word_t *w = t->word;
+    if (w->length <= LEVLIMIT) {
+        lookup_twid(dt, t, tr);
+        return tr;
+    }
+
+    // If typos are not allowed, do a notypo lookup
+    if (!t->typos) {
+        lookup_notypo(dt, t, tr);
+        return tr;
+    }
+
+    lookup_typo(dt, t, tr);
+    return tr;
 }
 

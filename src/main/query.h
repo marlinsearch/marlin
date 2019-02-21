@@ -3,7 +3,7 @@
 
 #include "kvec.h"
 #include "index.h"
-#include "analyzer.h"
+#include "word.h"
 
 typedef enum prefix_type {
     PREFIX_LAST,
@@ -31,13 +31,6 @@ typedef enum typos_type {
     TYPO_NONE,
     TYPO_MAX
 } TYPO_TYPE;
-
-
-typedef struct search_term {
-    word_t *word;
-    uint8_t prefix:1;
-    uint8_t typos:1;
-} term_t;
 
 struct query_cfg {
     PREFIX_TYPE prefix;

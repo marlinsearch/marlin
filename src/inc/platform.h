@@ -14,6 +14,7 @@
 #endif
 
 #define INITLOCK(x)   pthread_rwlock_init((x), NULL)
+#define DESTROYLOCK(x) pthread_rwlock_destroy(x)
 #define TRY_RDLOCK(x) pthread_rwlock_tryrdlock((x))
 
 #if 0

@@ -19,6 +19,9 @@
 #define IDPRIORITY(id, priority) ((uint64_t) id << 32 | priority << 16)
 #define IDPHRASE(id, id2) ((uint64_t) id << 32 | id2 << 12)
 
+#define MIN(a,b) (((a)<(b))?(a):(b))
+#define MAX(a,b) (((a)>(b))?(a):(b))
+
 // Maximum supported attributes?  // TODO: Too less ?
 #define MAX_FIELDS      0xFF
 

@@ -5,6 +5,8 @@
 #include <pthread.h>
 #include "bmap.h"
 #include "platform.h"
+#include "word.h"
+#include "khash.h"
 #include <lmdb.h>
 
 #define DT_MAGIC    0xBEDEADFE
@@ -14,7 +16,7 @@
 #define LEVLIMIT    3
 #define MAPSIZE     PSIZE * PSIZE * 100
 
-typedef utf8proc_int32_t CHR;                                                            
+KHASH_MAP_INIT_INT(WID2TYPOS, int);
 
 typedef enum node_type{
     NS_DEFAULT = 1, // 16
@@ -35,7 +37,7 @@ struct PACKED dnode_id {
 };
 
 struct PACKED dnode_ptr {
-    CHR c;
+    chr_t c;
     struct dnode_id nid;
 };
 
@@ -77,17 +79,33 @@ struct node_iter {
     struct dnode *node;
     struct dnode *parent;
     struct dnode_id nid;
-    CHR c;
+    chr_t c;
 };
 
+typedef struct search_term {
+    word_t *word;
+    uint8_t prefix:1;
+    uint8_t typos:1;
+} term_t;
+
+/**
+ * Term result holds the result of looking up a given term
+ * in dtrie for a given shard index
+ */
+typedef struct termresult {
+    uint32_t twid;
+    khash_t(WID2TYPOS) *wordids;
+} termresult_t;
 
 struct dtrie *dtrie_new(const char *path, MDB_dbi dbi, MDB_txn *txn);
-uint32_t dtrie_insert(struct dtrie *dt, const CHR *str, int slen, uint32_t *twids);
-uint32_t dtrie_exists(struct dtrie *dt, const CHR *str, int slen, uint32_t *twids);
+uint32_t dtrie_insert(struct dtrie *dt, const chr_t *str, int slen, uint32_t *twids);
+uint32_t dtrie_exists(struct dtrie *dt, const chr_t *str, int slen, uint32_t *twids);
 void dump_dtrie_stats(struct dtrie *dt);
 void dtrie_write_start(struct dtrie *dt);
+// TODO: Get rid of the lmdb here.. this should be handled outside of dtrie
 void dtrie_write_end(struct dtrie *dt, MDB_dbi dbi, MDB_txn *txn);
 void dtrie_free(struct dtrie *dt);
+struct termresult *dtrie_lookup_term(struct dtrie *dt, term_t *t);
 
 #endif
 
