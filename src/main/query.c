@@ -2,6 +2,11 @@
 #include "squery.h"
 #include "marlin.h"
 
+static void term_free(term_t *t) {
+    wordfree(t->word);
+    free(t);
+}
+
 /* Executes a parsed query.  This inturn sends the query to multiple shards
  * and further processes the results before sending the final response*/
 char *execute_query(struct query *q) {
@@ -20,6 +25,10 @@ char *execute_query(struct query *q) {
 
     wait_for_workers(&worker);
     worker_destroy(&worker);
+
+    // TODO: Process response within shardquery
+    
+    free(sq);
     return "";
 }
 
@@ -132,8 +141,7 @@ void generate_query_terms(struct query *q) {
 }
 
 struct query *query_new(struct index *in) {
-    struct query *q = malloc(sizeof(struct query));
-    q->num_words = 0;
+    struct query *q = calloc(1, sizeof(struct query));
     q->in = in;
     kv_init(q->words);
     kv_init(q->terms);
@@ -141,9 +149,19 @@ struct query *query_new(struct index *in) {
 }
 
 void query_free(struct query *q) {
-    //TODO: free word inside words
+    free(q->text);
+    // free words
+    for (int i = 0; i < q->num_words; i++) {
+        wordfree(kv_A(q->words, i));
+    }
     kv_destroy(q->words);
+
+    // Free terms and words in it
+    for (int i = 0; i < kv_size(q->terms); i++) {
+        term_free(kv_A(q->terms, i));
+    }
     kv_destroy(q->terms);
+
     free(q);
 }
 

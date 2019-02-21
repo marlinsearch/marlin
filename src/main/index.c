@@ -481,6 +481,7 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
     if (q) {
         query_free(q);
     }
+    json_decref(jq);
     // TODO: Send query response
     return strdup(J_SUCCESS);
 }
