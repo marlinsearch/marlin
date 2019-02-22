@@ -233,7 +233,7 @@ struct bmap *mbmap_load_bmap(MDB_txn *txn, MDB_dbi dbi, uint64_t id) {
         }
         return b;
     } else {
-        // S_INFO("Failed to load mbmap %d\n", rc);
+        //M_INFO("Failed to load mbmap %d\n", rc);
     }
     return NULL;
 }

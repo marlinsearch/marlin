@@ -52,6 +52,5 @@ struct query *query_new(struct index *in);
 void query_free(struct query *q);
 char *execute_query(struct query *q);
 void generate_query_terms(struct query *q);
-void dump_query(struct query *q);
 
 #endif

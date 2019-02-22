@@ -759,7 +759,7 @@ static void lookup_typo(struct dtrie *dt, term_t *t, termresult_t *tr) {
     int *current_row = malloc(((wlen + 1) * (wlen + 2) * 2) * sizeof(int));
 
     for (int i = 0; i <= wlen; i++) {
-        current_row[i] = 1;
+        current_row[i] = i;
     }
 
     struct dnode *root = dt->root;
@@ -792,3 +792,9 @@ struct termresult *dtrie_lookup_term(struct dtrie *dt, term_t *t) {
     return tr;
 }
 
+void termresult_free(struct termresult *t) {
+    if (t) {
+        kh_destroy(WID2TYPOS, t->wordids);
+        free(t);
+    }
+}

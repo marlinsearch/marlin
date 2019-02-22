@@ -36,14 +36,6 @@ word_t *wordcat(word_t *dest, const word_t *src) {
     return dest;
 }
 
-void worddump(const word_t *a) {
-    printf("Length : %d [ ", a->length);
-    for (int i = 0; i < a->length; i++) {
-        printf("%u ", a->chars[i]);
-    }
-    printf("]\n");
-}
-
 void wordfree(word_t *w) {
     if (w) {
         free(w->chars);

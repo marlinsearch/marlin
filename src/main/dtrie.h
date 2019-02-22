@@ -106,6 +106,7 @@ void dtrie_write_start(struct dtrie *dt);
 void dtrie_write_end(struct dtrie *dt, MDB_dbi dbi, MDB_txn *txn);
 void dtrie_free(struct dtrie *dt);
 struct termresult *dtrie_lookup_term(struct dtrie *dt, term_t *t);
+void termresult_free(struct termresult *t);
 
 #endif
 

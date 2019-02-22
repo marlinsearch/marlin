@@ -4,9 +4,15 @@
 #include "query.h"
 #include "kvec.h"
 #include "workers.h"
+#include "mbmap.h"
+
+typedef struct termdata {
+    termresult_t *tresult;
+    struct bmap *tbmap;
+} termdata_t;
 
 struct squery_result {
-    kvec_t(termresult_t *) termresults;
+    kvec_t(termdata_t *) termdata;
 };
 
 struct squery {
@@ -14,9 +20,11 @@ struct squery {
     struct query *q;
     struct squery_result *sqres;
     int shard_idx;
+    MDB_txn *txn;
 };
 
 void execute_squery(void *w);
+void sqresult_free(struct squery_result *sqres);
 
 #endif
 

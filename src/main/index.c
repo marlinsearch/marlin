@@ -9,6 +9,7 @@
 #include "workers.h"
 #include "analyzer.h"
 #include "query.h"
+#include "debug.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 #define USE_INDEX_THREAD_POOL 1

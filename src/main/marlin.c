@@ -12,6 +12,7 @@
 #include "analyzer.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
+#define SINGLE_THREAD_SEARCH_POOL 1
 
 struct marlin *marlin;
 threadpool_t *index_pool;
@@ -33,8 +34,13 @@ static void setup_thread_pools(void) {
      * Total number of all shards of all indices.
      * */
     index_pool = threadpool_create(marlin->num_processors, marlin->num_processors * 256, 0);
-    search_pool = threadpool_create(((marlin->num_processors * 3)/2) + 1, 
-                                      marlin->num_processors * 256, 0);
+    search_pool = threadpool_create(
+#ifdef SINGLE_THREAD_SEARCH_POOL
+        1,
+#else
+        ((marlin->num_processors * 3)/2) + 1, 
+#endif
+        marlin->num_processors * 256, 0);
 }
 
 // Load marlin settings

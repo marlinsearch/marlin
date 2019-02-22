@@ -358,6 +358,16 @@ void oper_free(struct oper *o) {
     o = NULL;
 }
 
+// Frees all bitmaps added to this operation
+// and frees the operation itself
+void oper_total_free(struct oper *o) {
+    for (int i=0; i<o->count; i++) {
+        bmap_free(o->b[i]);
+    }
+    oper_free(o);
+}
+
+
 void oper_add(struct oper *o, struct bmap *b) {
     o->count++;
     o->b = realloc(o->b, o->count*sizeof(struct bmap *));

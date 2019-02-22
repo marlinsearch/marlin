@@ -36,5 +36,6 @@ void oper_add(struct oper *o, struct bmap *b);
 struct bmap *oper_and(const struct oper *o);
 struct bmap *oper_or(const struct oper *o);
 void oper_free(struct oper *o);
+void oper_total_free(struct oper *o);
 
 #endif
