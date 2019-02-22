@@ -77,6 +77,9 @@ static void setup_signal_handlers(void) {
     // h2o_set_signal_handler(SIGINT, on_sigterm);
 #ifdef VALGRIND_TEST
     h2o_set_signal_handler(SIGINT, on_sigterm);
+#else
+    on_sigterm(0);
+    exit(0);
 #endif
     h2o_set_signal_handler(SIGPIPE, SIG_IGN);
 }

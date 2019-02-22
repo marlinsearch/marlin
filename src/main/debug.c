@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "debug.h"
 
+#ifdef DUMP_ENABLE
 void worddump(const word_t *a) {
     printf("Length : %d [ ", a->length);
     for (int i = 0; i < a->length; i++) {
@@ -54,3 +55,4 @@ void dump_bmap(struct bmap *b) {
     bmap_iterate(b, bmap_iter, &x);
     printf("\n");
 }
+#endif

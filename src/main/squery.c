@@ -192,7 +192,7 @@ void sqresult_free(struct squery_result *sqres) {
 
 void execute_squery(void *w) {
     struct squery *sq = w;
-    M_INFO("Performing squery for shard %d", sq->shard_idx);
+    M_DBG("Performing squery for shard %d", sq->shard_idx);
     // First allocate a sq_result
     sq->sqres = squery_result_new();
     // Let the shard index handle the query now
@@ -208,7 +208,7 @@ void execute_squery(void *w) {
     // From the term data, find all objects which match our query
     sq->sqres->objid_map = get_matching_objids(sq);
     if (sq->sqres->objid_map == NULL) {
-        printf("no matching objects found\n");
+        //printf("no matching objects found\n");
     } else {
         dump_bmap(sq->sqres->objid_map);
         bmap_free(sq->sqres->objid_map);

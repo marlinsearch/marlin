@@ -12,7 +12,7 @@
 #include "analyzer.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
-#define SINGLE_THREAD_SEARCH_POOL 1
+//#define SINGLE_THREAD_SEARCH_POOL 1
 
 struct marlin *marlin;
 threadpool_t *index_pool;
