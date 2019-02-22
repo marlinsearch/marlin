@@ -369,9 +369,11 @@ void oper_total_free(struct oper *o) {
 
 
 void oper_add(struct oper *o, struct bmap *b) {
-    o->count++;
-    o->b = realloc(o->b, o->count*sizeof(struct bmap *));
-    o->b[o->count-1] = b;
+    if (b) {
+        o->count++;
+        o->b = realloc(o->b, o->count*sizeof(struct bmap *));
+        o->b[o->count-1] = b;
+    }
 }
 
 struct bmap *oper_and(const struct oper *o) {

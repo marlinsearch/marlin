@@ -198,6 +198,7 @@ static struct cont *array_array_and(const struct cont *a, const struct cont *b) 
     c->buffer = malloc(sizeof(uint16_t) * ((l1 < l2) ? l1 : l2));
     c->buffer[ID] = a->buffer[ID];
     c->buffer[CARDINALITY] = 0;
+    c->buffer[CARDINALITY+1] = 0;
 
     int pos1 = 2;
     int pos2 = 2;
@@ -241,6 +242,7 @@ static struct cont *bitset_array_and(const struct cont *a, const struct cont *b)
     }
     c->buffer[ID] = a->buffer[ID];
     c->buffer[CARDINALITY] = 0;
+    c->buffer[CARDINALITY+1] = 0;
 
     int pos = 2;
     int len = a->buffer[CARDINALITY] + 2;

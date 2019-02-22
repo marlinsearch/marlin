@@ -76,13 +76,108 @@ static void lookup_terms(struct squery *sq, struct sindex *si) {
     int num_terms = kv_size(sq->q->terms);
     struct squery_result *sqres = sq->sqres;
 
+    // First collect matching words with distance and the corresponding object ids
     for (int i = 0; i < num_terms; i++) {
         struct termdata *td = calloc(1, sizeof(struct termdata));
         td->tresult = dtrie_lookup_term(si->trie, kv_A(sq->q->terms, i));
         process_termresult(sq, si, td);
         dump_termresult(td->tresult);
+        dump_bmap(td->tbmap);
         kv_push(termdata_t *, sqres->termdata, td);
     }
+}
+
+// For a given term, OR matching objects with adjacent terms
+static struct bmap *get_term_objids(struct squery_result *sqres, int term_pos, int num_terms) {
+    struct oper *o = oper_new();
+    if (term_pos > 0) {
+        oper_add(o, (kv_A(sqres->termdata, term_pos - 1))->tbmap);
+    }
+    oper_add(o, (kv_A(sqres->termdata, term_pos))->tbmap);
+
+    if (term_pos < num_terms - 2) {
+        oper_add(o, (kv_A(sqres->termdata, term_pos + 1))->tbmap);
+    }
+
+    // oper_or by default returns an empty bitmap if all above bitmaps are null.
+    // Return a NULL instead when no matches are found
+    struct bmap *ret = o->count ? oper_or(o) : NULL;
+    oper_free(o);
+    return ret;
+}
+
+/* Returns the total final matching object ids for the given terms */
+static struct bmap *get_matching_objids(struct squery *sq) {
+    int num_terms = kv_size(sq->q->terms);
+    struct squery_result *sqres = sq->sqres;
+
+    // This happens when the query text is empty or not set
+    if (num_terms == 0) {
+        // TODO: Duplicate and send all available objids
+        return NULL;
+    }
+
+    // This happens when the query text is a single word
+    if (num_terms == 1) {
+        termdata_t *td = kv_A(sqres->termdata, 0);
+        if (td->tbmap) {
+            // TODO: optimize, see if we can get away without duplicating this
+            return bmap_duplicate(td->tbmap);
+        } else {
+            return NULL;
+        }
+    }
+
+    struct bmap *ret = NULL;
+    /* In case of multi word queries, a bunch of terms are generated.
+     * Example for a search of 'a new hope', the terms are as follows
+     * a) a
+     * b) anew
+     * c) new
+     * d) newhope
+     * e) hope
+     * f) anewhope
+     *
+     * The final objids are 
+     *
+     * ((a | anew) & (anew | new | newhope) & (hope | anewhope)) | (anewhope)
+     */
+    struct oper *o = oper_new();
+    for (int i = 0; i < num_terms; i += 2) {
+        struct bmap *b = get_term_objids(sqres, i, num_terms);
+        // If not term ids are found, we do not have matching results bail out
+        if (!b) {
+            oper_total_free(o);
+            goto last_term;
+        } else {
+            oper_add(o, b);
+        }
+    }
+    // We have been matching data until now
+    ret = oper_and(o);
+    oper_total_free(o);
+    // If not matches were found, return NULL
+    if (bmap_cardinality(ret) == 0) {
+        bmap_free(ret);
+        ret = NULL;
+    }
+
+last_term:
+    // Finally or with the last combined terms search
+    if (kv_A(sqres->termdata, num_terms -1 )->tbmap) {
+        if (!ret) {
+            return bmap_duplicate(kv_A(sqres->termdata, num_terms -1 )->tbmap);
+        }
+        // TODO: Implement bmap_inplace_or !
+        struct oper *o = oper_new();
+        oper_add(o, ret);
+        oper_add(o, kv_A(sqres->termdata, num_terms -1 )->tbmap);
+        struct bmap *temp_ret = oper_or(o);
+        oper_free(o);
+        bmap_free(ret);
+        ret = temp_ret;
+    }
+    return ret;
 }
 
 static void termdata_free(termdata_t *td) {
@@ -106,8 +201,18 @@ void execute_squery(void *w) {
 
     // Setup a mdb txn
     mdb_txn_begin(si->env, NULL, MDB_RDONLY, &sq->txn);
+
     // First lookup all terms
     lookup_terms(sq, si);
+
+    // From the term data, find all objects which match our query
+    sq->sqres->objid_map = get_matching_objids(sq);
+    if (sq->sqres->objid_map == NULL) {
+        printf("no matching objects found\n");
+    } else {
+        dump_bmap(sq->sqres->objid_map);
+        bmap_free(sq->sqres->objid_map);
+    }
 
     // cleanup all termdata
     for (int i = 0; i < kv_size(sq->sqres->termdata); i++) {

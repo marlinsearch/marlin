@@ -8,5 +8,6 @@
 void worddump(const word_t *a);
 void dump_query(struct query *q);
 void dump_termresult(termresult_t *tr);
+void dump_bmap(struct bmap *b);
 
 #endif

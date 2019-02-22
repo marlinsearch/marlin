@@ -13,6 +13,7 @@ typedef struct termdata {
 
 struct squery_result {
     kvec_t(termdata_t *) termdata;
+    struct bmap *objid_map;
 };
 
 struct squery {

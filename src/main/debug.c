@@ -37,3 +37,20 @@ void dump_termresult(termresult_t *tr) {
     });
 }
 
+static void bmap_iter(uint32_t x, void *d) {
+    uint32_t *v = d;
+    *v += 1;
+    printf("%8u", x);
+    if ((*v % 8) == 0) printf("\n");
+}
+
+void dump_bmap(struct bmap *b) {
+    if (!b) {
+        printf("bmap is null\n");
+        return;
+    }
+    printf("\nBitmap length : %u\n", bmap_cardinality(b));
+    uint32_t x = 0;
+    bmap_iterate(b, bmap_iter, &x);
+    printf("\n");
+}
