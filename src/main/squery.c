@@ -8,7 +8,6 @@
 
 static struct squery_result *squery_result_new(void) {
     struct squery_result *sqres = calloc(1, sizeof(struct squery_result));
-    kv_init(sqres->termdata);
     return sqres;
 }
 
@@ -75,28 +74,30 @@ static void process_termresult(struct squery *sq, struct sindex *si, struct term
 static void lookup_terms(struct squery *sq, struct sindex *si) {
     int num_terms = kv_size(sq->q->terms);
     struct squery_result *sqres = sq->sqres;
+    sqres->termdata = calloc(num_terms, sizeof(struct termdata));
 
     // First collect matching words with distance and the corresponding object ids
     for (int i = 0; i < num_terms; i++) {
-        struct termdata *td = calloc(1, sizeof(struct termdata));
+        struct termdata *td = &sqres->termdata[i];
         td->tresult = dtrie_lookup_term(si->trie, kv_A(sq->q->terms, i));
         process_termresult(sq, si, td);
         dump_termresult(td->tresult);
         dump_bmap(td->tbmap);
-        kv_push(termdata_t *, sqres->termdata, td);
     }
 }
 
 // For a given term, OR matching objects with adjacent terms
 static struct bmap *get_term_objids(struct squery_result *sqres, int term_pos, int num_terms) {
     struct oper *o = oper_new();
+    /* (anew | new | newhope) */ 
     if (term_pos > 0) {
-        oper_add(o, (kv_A(sqres->termdata, term_pos - 1))->tbmap);
+        oper_add(o, sqres->termdata[term_pos - 1].tbmap);
     }
-    oper_add(o, (kv_A(sqres->termdata, term_pos))->tbmap);
+
+    oper_add(o, sqres->termdata[term_pos].tbmap);
 
     if (term_pos < num_terms - 2) {
-        oper_add(o, (kv_A(sqres->termdata, term_pos + 1))->tbmap);
+        oper_add(o, sqres->termdata[term_pos + 1].tbmap);
     }
 
     // oper_or by default returns an empty bitmap if all above bitmaps are null.
@@ -119,7 +120,7 @@ static struct bmap *get_matching_objids(struct squery *sq) {
 
     // This happens when the query text is a single word
     if (num_terms == 1) {
-        termdata_t *td = kv_A(sqres->termdata, 0);
+        termdata_t *td = &sqres->termdata[0];
         if (td->tbmap) {
             // TODO: optimize, see if we can get away without duplicating this
             return bmap_duplicate(td->tbmap);
@@ -164,14 +165,14 @@ static struct bmap *get_matching_objids(struct squery *sq) {
 
 last_term:
     // Finally or with the last combined terms search
-    if (kv_A(sqres->termdata, num_terms -1 )->tbmap) {
+    if (sqres->termdata[num_terms-1].tbmap) {
         if (!ret) {
-            return bmap_duplicate(kv_A(sqres->termdata, num_terms -1 )->tbmap);
+            return bmap_duplicate(sqres->termdata[num_terms-1].tbmap);
         }
         // TODO: Implement bmap_inplace_or !
         struct oper *o = oper_new();
         oper_add(o, ret);
-        oper_add(o, kv_A(sqres->termdata, num_terms -1 )->tbmap);
+        oper_add(o, sqres->termdata[num_terms-1].tbmap);
         struct bmap *temp_ret = oper_or(o);
         oper_free(o);
         bmap_free(ret);
@@ -183,7 +184,6 @@ last_term:
 static void termdata_free(termdata_t *td) {
     termresult_free(td->tresult);
     bmap_free(td->tbmap);
-    free(td);
 }
 
 void sqresult_free(struct squery_result *sqres) {
@@ -215,10 +215,11 @@ void execute_squery(void *w) {
     }
 
     // cleanup all termdata
-    for (int i = 0; i < kv_size(sq->sqres->termdata); i++) {
-        termdata_free(kv_A(sq->sqres->termdata, i));
+    int num_terms = kv_size(sq->q->terms);
+    for (int i = 0; i < num_terms; i++) {
+        termdata_free(&sq->sqres->termdata[i]);
     }
-    kv_destroy(sq->sqres->termdata);
+    free(sq->sqres->termdata);
     
     // Abort the read only transaction, we are done executing the query
     mdb_txn_abort(sq->txn);

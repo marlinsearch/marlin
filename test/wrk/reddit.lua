@@ -19,7 +19,7 @@ request = function()
     end
     num = math.random(1, rlen)
     rstr = string.sub(rstr, 0, num)
-    path = "/1/indexes/red/query?x-marlin-application-id=DAlFjWFg&x-marlin-rest-api-key=b8xKr1jExeB2UxmYhUJKsNpV4zNLx50V"
+    path = "/1/indexes/reddit/query?x-marlin-application-id=DAlFjWFg&x-marlin-rest-api-key=b8xKr1jExeB2UxmYhUJKsNpV4zNLx50V"
     wrk.method = "POST"
     wrk.body   = "{\"q\":\"".. rstr .. "\"}"
     wrk.headers["Content-Type"] = "application/json"

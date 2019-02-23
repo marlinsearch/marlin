@@ -169,6 +169,8 @@ uint32_t bmap_and_cardinality(const struct bmap *a, const struct bmap *b) {
 struct bmap *bmap_duplicate(const struct bmap *a) {
     struct bmap *b = bmap_new();
     memcpy(b, a, sizeof(struct bmap));
+    b->mdb_bmap = 0;
+    b->needs_free = 1;
     b->c = malloc(b->num_c * sizeof(struct cont));
     memcpy(b->c, a->c, b->num_c * sizeof(struct cont));
     for (int i = 0; i < b->num_c; i++) {
