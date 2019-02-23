@@ -15,7 +15,7 @@ struct shard {
 };
 
 struct shard *shard_new(struct index *in, uint16_t shard_id);
-void shard_add_objects(struct shard *s, json_t *j);
+void shard_add_documents(struct shard *s, json_t *j);
 void shard_free(struct shard *s);
 void shard_delete(struct shard *s);
 void shard_clear(struct shard *s);

@@ -62,7 +62,7 @@
 #define J_NUM_SHARDS    "numShards"
 #define J_NUM_JOBS      "numJobs"
 #define J_ID            "_id"
-#define J_OID           "_oid"
+#define J_DOCID         "_docid"
 #define J_TYPE          "type"
 #define J_PROPERTIES    "properties"
 #define J_FIELDID       "fieldId"

@@ -39,13 +39,13 @@ void shard_set_mapping(struct shard *s, const struct mapping *m) {
     sindex_set_mapping(s->sindex, m);
 }
 
-/* Adds one or more objects to a shard */
-void shard_add_objects(struct shard *s, json_t *j) {
+/* Adds one or more documents to a shard */
+void shard_add_documents(struct shard *s, json_t *j) {
     // First add it to the shard datastore, this updates
-    // the shard object id
-    sdata_add_objects(s->sdata, j);
-    // Then index the object data
-    sindex_add_objects(s->sindex, j);
+    // the shard document id
+    sdata_add_documents(s->sdata, j);
+    // Then index the document data
+    sindex_add_documents(s->sindex, j);
 }
 
 void shard_free(struct shard *s) {

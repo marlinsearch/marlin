@@ -47,7 +47,7 @@ uint64_t get_utc_seconds(void) {
     return tv.tv_sec;
 }
 
-char *generate_objid(flakeid_ctx_t *fctx) {
+char *generate_docid(flakeid_ctx_t *fctx) {
     unsigned char id[16];
     flakeid_get(fctx, id);
     size_t outlen;

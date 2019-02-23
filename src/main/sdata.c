@@ -1,6 +1,6 @@
-/* Shard Data - Handles storing, retrieving and setting ID for the JSON objects.
+/* Shard Data - Handles storing, retrieving and setting ID for the JSON documents.
  *
- * All objects are compressed by zlib before storing in lmdb.  An object shard id is assigned
+ * All documents are compressed by zlib before storing in lmdb.  An object shard id is assigned
  * to every object sequentially as long as there are no deletions.  In case of deletions,
  * deleted object ids are reused. This object SID is used to refer to the document all over
  * Shard Index (sindex.c).  In the future, during reindexing, the document ids will be 
@@ -15,14 +15,14 @@
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 
-// Save last oid in mdb, assumes a txn is already in progress
-static void save_last_oid(struct sdata *sd) {
+// Save last docid in mdb, assumes a txn is already in progress
+static void save_last_docid(struct sdata *sd) {
     uint32_t x = 0xFFFFFFFF;
     MDB_val key, data;
     key.mv_size = sizeof(x);
     key.mv_data = &x;
-    data.mv_data = &sd->lastoid;
-    data.mv_size = sizeof(sd->lastoid);
+    data.mv_data = &sd->last_docid;
+    data.mv_size = sizeof(sd->last_docid);
     mdb_put(sd->txn, sd->sid2json_dbi, &key, &data, 0);
 }
 
@@ -33,18 +33,18 @@ static void load_sdata_info(struct sdata *sd) {
     key.mv_size = sizeof(x);
     key.mv_data = &x;
     if (mdb_get(sd->txn, sd->sid2json_dbi, &key, &data) == 0) {
-        sd->lastoid = *(uint32_t *) data.mv_data;
+        sd->last_docid = *(uint32_t *) data.mv_data;
     } else {
-        save_last_oid(sd);
+        save_last_docid(sd);
     }
 }
 
 /* Gets a free object id */
-// TODO: Handle deletions and maintain free objids in bitmap
-static uint32_t get_free_objid(struct sdata *sd) {
-    uint32_t new_oid = sd->lastoid;
-    sd->lastoid++;
-    return new_oid;
+// TODO: Handle deletions and maintain free docids in bitmap
+static uint32_t get_free_docid(struct sdata *sd) {
+    uint32_t new_docid = sd->last_docid;
+    sd->last_docid++;
+    return new_docid;
 }
 
 static char *jcompress(const char *src, int *compressed_len) {
@@ -70,8 +70,8 @@ static void sdata_add_object(struct sdata *sd, json_t *j) {
     if (!j) return;
     if (json_is_null(j)) return;
     // TODO: Handle free entries from free_bm, also read below note !
-    uint32_t newoid = get_free_objid(sd);
-    json_object_set_new(j, J_OID, json_integer(newoid));
+    uint32_t new_docid = get_free_docid(sd);
+    json_object_set_new(j, J_DOCID, json_integer(new_docid));
     char *jdata = json_dumps(j, JSON_PRESERVE_ORDER|JSON_COMPACT);
     int compressed_len;
     char *compressed_data = jcompress(jdata, &compressed_len);
@@ -79,7 +79,7 @@ static void sdata_add_object(struct sdata *sd, json_t *j) {
     // Update SID2JSON
     MDB_val key, data;
     key.mv_size = sizeof(uint32_t);
-    key.mv_data = &newoid;
+    key.mv_data = &new_docid;
     data.mv_size = compressed_len;
     data.mv_data = compressed_data;
     mdb_put(sd->txn, sd->sid2json_dbi, &key, &data, 0);
@@ -89,7 +89,7 @@ static void sdata_add_object(struct sdata *sd, json_t *j) {
     key.mv_data = (void *)id;
     key.mv_size = sd->custom_id? strlen(id) + 1 : 22;
     data.mv_size = sizeof(uint32_t);
-    data.mv_data = &newoid;
+    data.mv_data = &new_docid;
     mdb_put(sd->txn, sd->id2sid_dbi, &key, &data, 0);
 
     free(jdata);
@@ -97,25 +97,25 @@ static void sdata_add_object(struct sdata *sd, json_t *j) {
 }
 
 
-/* Takes one more more objects for a shard and stores it in the shard datastore
+/* Takes one more more documents for a shard and stores it in the shard datastore
  * A shard object id which will be the position of the object in the obj bitmap index is
  * assigned first. Any free ids due to deletions are used in advance to keep our obj
- * ids compact. The objects themselves are zlib/lz4 compressed and stored */
-void sdata_add_objects(struct sdata *sd, json_t *j) {
-    uint32_t oid = sd->lastoid;
+ * ids compact. The documents themselves are zlib/lz4 compressed and stored */
+void sdata_add_documents(struct sdata *sd, json_t *j) {
+    uint32_t docid = sd->last_docid;
     mdb_txn_begin(sd->env, NULL, 0, &sd->txn);
     if (json_is_array(j)) {
-        size_t objid;
+        size_t docid;
         json_t *obj;
-        json_array_foreach(j, objid, obj) {
+        json_array_foreach(j, docid, obj) {
             sdata_add_object(sd, obj);
         }
     } else {
         sdata_add_object(sd, j);
     }
-    // store the free_bm / used_bm objid maps
-    if (oid != sd->lastoid) {
-        save_last_oid(sd);
+    // store the free_bm / used_bm docid maps
+    if (docid != sd->last_docid) {
+        save_last_docid(sd);
     }
     mdb_txn_commit(sd->txn);
  
@@ -138,7 +138,7 @@ void sdata_clear(struct sdata *sd) {
         M_ERR("Failed to drop sid2json dbi %d %s", rc, mdb_strerror(rc));
     }
     mdb_txn_commit(sd->txn);
-    sd->lastoid = 1;
+    sd->last_docid = 1;
 }
 
 /* Deletes the shard data.  Drops all data and removes the data folder */
@@ -164,7 +164,7 @@ void sdata_delete(struct sdata *sd) {
 struct sdata *sdata_new(struct shard *shard) {
     struct sdata *s = calloc(1, sizeof(struct sdata));
     s->shard = shard;
-    s->lastoid = 1;
+    s->last_docid = 1;
     s->custom_id = false;
     struct index *in = shard->index;
 

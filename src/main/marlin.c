@@ -25,9 +25,9 @@ threadpool_t *search_pool;
  */
 static void setup_thread_pools(void) {
     /* Index pool is used solely for indexing.  Each index by itself can only process
-     * one index job at any given time. An index job may be a single object add / delete
-     * or modify. It can also be a bulk add or delete of thousands of objects.
-     * When a bulk add of 1000s of objects take place, the data is split for multiple
+     * one index job at any given time. An index job may be a single document add / delete
+     * or modify. It can also be a bulk add or delete of thousands of documents.
+     * When a bulk add of 1000s of documents take place, the data is split for multiple
      * shards and a indexpool task is launched for each of these shards.
      *
      * The maximum number of indexpool tasks that can be queued is thus 
@@ -206,10 +206,10 @@ static void load_apps(void) {
     json_error_t error;
     json = json_load_file(path, 0, &error);
     if (json && json_is_array(json)) {
-        size_t objid;
-        json_t *obj;
-        json_array_foreach(json, objid, obj) {
-            create_app_from_json(obj);
+        size_t id;
+        json_t *j;
+        json_array_foreach(json, id, j) {
+            create_app_from_json(j);
         }
         json_decref(json);
     }

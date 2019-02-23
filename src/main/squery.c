@@ -11,11 +11,11 @@ static struct squery_result *squery_result_new(void) {
     return sqres;
 }
 
-static struct bmap *get_twid_to_objids(struct squery *sq, struct sindex *si, uint32_t twid) {
+static struct bmap *get_twid_to_docids(struct squery *sq, struct sindex *si, uint32_t twid) {
     // TODO: Currently it handles matches from all fields, restrict based on requested fields
     // read the query to find that out
     struct bmap *b = mbmap_load_bmap(sq->txn, si->twid2bmap_dbi, IDPRIORITY(twid, 0));
-    // If we have any objids under this twid, return it
+    // If we have any docids under this twid, return it
     if (b && bmap_cardinality(b)) {
         return b;
     } else {
@@ -43,15 +43,15 @@ static void set_wids_under_twid(struct squery *sq, struct sindex *si, termresult
 static void process_termresult(struct squery *sq, struct sindex *si, struct termdata *td) {
     termresult_t *tr = td->tresult;
     // Check if we have a twid or word ids set, if not just bail out
-    // we do not have any objects matching that term
+    // we do not have any documents matching that term
     if ((tr->twid == 0) && (kh_size(tr->wordids) == 0)) return;
 
     // TODO: Currently it handles matches from all fields, restrict based on requested fields
-    // If we have a top level word id set, we can use the top level object matches
+    // If we have a top level word id set, we can use the top level document matches
     // We will need to load the words under this top level id though
     if (tr->twid) {
-        td->tbmap = get_twid_to_objids(sq, si, tr->twid);
-        // If we have objids under this twid, let us get all the words that are under it
+        td->tbmap = get_twid_to_docids(sq, si, tr->twid);
+        // If we have docids under this twid, let us get all the words that are under it
         if (td->tbmap) {
             set_wids_under_twid(sq, si, tr);
         }
@@ -76,7 +76,7 @@ static void lookup_terms(struct squery *sq, struct sindex *si) {
     struct squery_result *sqres = sq->sqres;
     sqres->termdata = calloc(num_terms, sizeof(struct termdata));
 
-    // First collect matching words with distance and the corresponding object ids
+    // First collect matching words with distance and the corresponding document ids
     for (int i = 0; i < num_terms; i++) {
         struct termdata *td = &sqres->termdata[i];
         td->tresult = dtrie_lookup_term(si->trie, kv_A(sq->q->terms, i));
@@ -86,8 +86,8 @@ static void lookup_terms(struct squery *sq, struct sindex *si) {
     }
 }
 
-// For a given term, OR matching objects with adjacent terms
-static struct bmap *get_term_objids(struct squery_result *sqres, int term_pos, int num_terms) {
+// For a given term, OR matching documents with adjacent terms
+static struct bmap *get_term_docids(struct squery_result *sqres, int term_pos, int num_terms) {
     struct oper *o = oper_new();
     /* (anew | new | newhope) */ 
     if (term_pos > 0) {
@@ -107,14 +107,14 @@ static struct bmap *get_term_objids(struct squery_result *sqres, int term_pos, i
     return ret;
 }
 
-/* Returns the total final matching object ids for the given terms */
-static struct bmap *get_matching_objids(struct squery *sq) {
+/* Returns the total final matching document ids for the given terms */
+static struct bmap *get_matching_docids(struct squery *sq) {
     int num_terms = kv_size(sq->q->terms);
     struct squery_result *sqres = sq->sqres;
 
     // This happens when the query text is empty or not set
     if (num_terms == 0) {
-        // TODO: Duplicate and send all available objids
+        // TODO: Duplicate and send all available docids
         return NULL;
     }
 
@@ -139,13 +139,13 @@ static struct bmap *get_matching_objids(struct squery *sq) {
      * e) hope
      * f) anewhope
      *
-     * The final objids are 
+     * The final docids are 
      *
      * ((a | anew) & (anew | new | newhope) & (hope | anewhope)) | (anewhope)
      */
     struct oper *o = oper_new();
     for (int i = 0; i < num_terms; i += 2) {
-        struct bmap *b = get_term_objids(sqres, i, num_terms);
+        struct bmap *b = get_term_docids(sqres, i, num_terms);
         // If not term ids are found, we do not have matching results bail out
         if (!b) {
             oper_total_free(o);
@@ -205,13 +205,13 @@ void execute_squery(void *w) {
     // First lookup all terms
     lookup_terms(sq, si);
 
-    // From the term data, find all objects which match our query
-    sq->sqres->objid_map = get_matching_objids(sq);
-    if (sq->sqres->objid_map == NULL) {
-        //printf("no matching objects found\n");
+    // From the term data, find all documents which match our query
+    sq->sqres->docid_map = get_matching_docids(sq);
+    if (sq->sqres->docid_map == NULL) {
+        //printf("no matching documents found\n");
     } else {
-        dump_bmap(sq->sqres->objid_map);
-        bmap_free(sq->sqres->objid_map);
+        dump_bmap(sq->sqres->docid_map);
+        bmap_free(sq->sqres->docid_map);
     }
 
     // cleanup all termdata

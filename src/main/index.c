@@ -21,23 +21,23 @@ struct api_path {
     char *(*api_cb)(h2o_req_t *req, void *data);
 };
 
-/* Per thread data while adding objects */
+/* Per thread data while adding documents */
 struct add_obj_tdata {
     struct worker *tdata;
     struct index *index;
-    json_t *sh_j; // Json object / array of objects for a shard
+    json_t *sh_j; // Json object / array of documents for a shard
     int shard_idx;
 };
 
 void worker_add_process(void *w) {
     struct add_obj_tdata *add = w;
-    shard_add_objects(kv_A(add->index->shards, add->shard_idx), add->sh_j);
+    shard_add_documents(kv_A(add->index->shards, add->shard_idx), add->sh_j);
     M_INFO("Shard worker %d len %lu", add->shard_idx, json_array_size(add->sh_j));
     json_decref(add->sh_j);
     worker_done(add->tdata);
 }
 
-void index_worker_add_objects(struct index *in, json_t **sh_j) {
+void index_worker_add_documents(struct index *in, json_t **sh_j) {
     struct worker worker;
     worker_init(&worker, in->num_shards);
     struct add_obj_tdata *sh_add = malloc(in->num_shards * sizeof(struct add_obj_tdata));
@@ -67,11 +67,11 @@ static void update_shard_mappings(struct index *in) {
     }
 }
 
-/* When objects are added to an index, they may have to be parsed for schema
+/* When documents are added to an index, they may have to be parsed for schema
  * discovery.  This happens only when the index_schema is not yet ready. */
-static void index_extract_object_mapping(struct index *in, json_t *j) {
+static void index_extract_document_mapping(struct index *in, json_t *j) {
     // The incoming json can be an array or a single json object as our
-    // api to add objects supports both
+    // api to add documents supports both
     if (json_is_array(j)) {
         size_t index;
         json_t *jo;
@@ -86,39 +86,39 @@ static void index_extract_object_mapping(struct index *in, json_t *j) {
 
     // Try to apply config to get index schema ready
     if (in->cfg.configured && mapping_apply_config(in->mapping)) {
-        // If index schema is ready, reindex existing objects before
-        // adding new objects
+        // If index schema is ready, reindex existing documents before
+        // adding new documents
         // TODO: Reindex existing shards
         // Set mapping after reindexing
         update_shard_mappings(in);
     }
 }
 
-/* This is where new objects are added to the index.
- * First we generate a objid for every object.  use the objid
+/* This is where new documents are added to the index.
+ * First we generate a id for every document.  use the id
  * to determine which shard it belongs to and send it over */
-static void index_add_objects(struct index *in, json_t *j) {
+static void index_add_documents(struct index *in, json_t *j) {
     // Perform schema extraction if necessary if we are not
     // ready to index yet.  This may also end up reindexing
-    // existing objects in all shards
+    // existing documents in all shards
     if (UNLIKELY(!in->mapping->ready_to_index)) {
-        index_extract_object_mapping(in, j);
+        index_extract_document_mapping(in, j);
     }
 
     if (json_is_array(j)) {
         size_t index;
         json_t *jo;
-        // First create shard specific array of objects
+        // First create shard specific array of documents
         json_t **sh_j = malloc(sizeof(json_t *) * in->num_shards);
         for (int i = 0; i < in->num_shards; i++) {
             sh_j[i] = json_array();
         }
 
-        // set the object id for every object and hash the object id
-        // to send to the shard the object belongs.  Add it to the
+        // set the document id for every document and hash the document id
+        // to send to the shard the document belongs.  Add it to the
         // shard array
         json_array_foreach(j, index, jo) {
-            char *id = generate_objid(in->fctx);
+            char *id = generate_docid(in->fctx);
             json_object_set_new(jo, J_ID, json_string(id));
             int sid = get_shard_routing_id(id, in->num_shards);
             json_array_append(sh_j[sid], jo);
@@ -126,19 +126,19 @@ static void index_add_objects(struct index *in, json_t *j) {
         }
 
 #ifndef USE_INDEX_THREAD_POOL
-        // Finally add objects to the shards
+        // Finally add documents to the shards
         // When not using thread pool it is simple, just iterate and
         // get things done
         for (int i=0; i < in->num_shards; i++) {
             // send to shard
-            shard_add_objects(kv_A(in->shards, i), sh_j[i]);
+            shard_add_documents(kv_A(in->shards, i), sh_j[i]);
             printf("Shard %d len %lu\n", i, json_array_size(sh_j[i]));
             json_decref(sh_j[i]);
         }
 #else
         // When we use a thread pool we need to handle some additional
         // stuff 
-        index_worker_add_objects(in, sh_j);
+        index_worker_add_documents(in, sh_j);
 #endif
         free(sh_j);
     }
@@ -152,7 +152,7 @@ static void index_work_job(void *data) {
     if (in) {
         switch (job->type) {
             case JOB_ADD:
-                index_add_objects(in, job->j);
+                index_add_documents(in, job->j);
                 break;
             default:
                 break;
@@ -237,8 +237,8 @@ static void index_load_info(struct index *in) {
     }
 }
 
-/* Object / Objects are being added to the index.  The request can either
- * be a single object or an array of objects.  We never try to update the
+/* Documents are being added to the index.  The request can either
+ * be a single document or an array of documents.  We never try to update the
  * index right away.  A job is created and added to the job queue.  The
  * jobqueue gets processed serially one at at time */
 static char *index_data_callback(h2o_req_t *req, void *data) {
@@ -506,7 +506,7 @@ const struct api_path apipaths[] = {
     {"POST", URL_SETTINGS, KA_S_CONFIG, index_set_settings_callback},
     // Get current settings for this index
     {"GET", URL_SETTINGS, KA_G_CONFIG, index_get_settings_callback},
-    // Lets you add new objects to this index
+    // Lets you add new documents to this index
     {"POST", NULL, KA_ADD, index_data_callback},
     // Index info
     {"GET", URL_INFO, KA_QUERY|KA_BROWSE, index_info_callback},

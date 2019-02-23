@@ -13,7 +13,7 @@ typedef struct termdata {
 
 struct squery_result {
     termdata_t *termdata;
-    struct bmap *objid_map;
+    struct bmap *docid_map;
 };
 
 struct squery {

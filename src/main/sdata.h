@@ -4,10 +4,10 @@
 #include <lmdb.h>
 #include "shard.h"
 
-/* sdata holds the object data for a shard */
+/* sdata holds the document data for a shard */
 struct sdata {
     struct shard *shard;
-    uint32_t lastoid; // Last oid
+    uint32_t last_docid;
     bool custom_id;
 
     // LMDB
@@ -18,7 +18,7 @@ struct sdata {
 };
 
 struct sdata *sdata_new(struct shard *s);
-void sdata_add_objects(struct sdata *sd, json_t *j);
+void sdata_add_documents(struct sdata *sd, json_t *j);
 void sdata_free(struct sdata *sd);
 void sdata_delete(struct sdata *sd);
 void sdata_clear(struct sdata *sd);

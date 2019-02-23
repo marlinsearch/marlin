@@ -122,10 +122,10 @@ static void app_load_indexes(struct app *c) {
     json_error_t error;
     json = json_load_file(path, 0, &error);
     if (json && json_is_array(json)) {
-        size_t objid;
-        json_t *obj;
-        json_array_foreach(json, objid, obj) {
-            create_index_from_json(c, obj);
+        size_t id;
+        json_t *j;
+        json_array_foreach(json, id, j) {
+            create_index_from_json(c, j);
         }
         json_decref(json);
     }

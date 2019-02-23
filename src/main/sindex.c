@@ -1,5 +1,5 @@
 /* Shard Index - This is the search engine index manager, which takes care of 
- * parsing objects and building an index which lets us query these objects */
+ * parsing documents and building an index which lets us query these documents */
 #include "sindex.h"
 #include "marlin.h"
 #include "common.h"
@@ -77,9 +77,9 @@ static void si_write_start(struct sindex *si) {
     si->wc->kh_phrasebmap = kh_init(WID2MBMAP);
  
     // Setup per obj data
-    struct obj_data *od = &si->wc->od;
+    struct doc_data *od = &si->wc->od;
 
-    // Setup num_data to store numeric information for an object
+    // Setup num_data to store numeric information for an document
     // TODO: change it to vec like facets below
     if (si->map->num_numbers) {
         od->num_data = malloc(sizeof(double) * si->map->num_numbers);
@@ -137,18 +137,18 @@ static void si_write_end(struct sindex *si) {
     });
     kh_destroy(WID2MBMAP, si->wc->kh_twid2widbmap);
 
-    // Store twid to objid mapping
+    // Store twid to docid mapping
     kh_foreach_value(si->wc->kh_twid2bmap, mbmap, {
         store_id2mbmap(mbmap, si->twid2bmap_dbi, si->txn);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_twid2bmap);
 
-    // Store wid to objid mapping
+    // Store wid to docid mapping
     kh_foreach_value(si->wc->kh_wid2bmap, mbmap, {
         store_id2mbmap(mbmap, si->wid2bmap_dbi, si->txn);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_wid2bmap);
-    // Store phrase to objid mapping
+    // Store phrase to docid mapping
     kh_foreach_value(si->wc->kh_phrasebmap, mbmap, {
         store_id2mbmap(mbmap, si->phrase_dbi, si->txn);
     });
@@ -171,16 +171,16 @@ static void si_write_end(struct sindex *si) {
     // Commit write transaction
     mdb_txn_commit(si->txn);
 
-    // Free common object data
+    // Free common document data
     free(si->wc->od.num_data);
     free(si->wc->od.facet_data);
     // Free write cache finally
     free(si->wc);
 }
 
-/* Intializes per object data which is in the write cache */
-static inline void sindex_objdata_init(struct sindex *si) {
-    struct obj_data *od = &si->wc->od;
+/* Intializes per document data which is in the write cache */
+static inline void sindex_docdata_init(struct sindex *si) {
+    struct doc_data *od = &si->wc->od;
     memset(od->num_data, 0, (si->map->num_numbers*sizeof(double)));
 
     kv_init(od->kv_widpos);
@@ -191,11 +191,11 @@ static inline void sindex_objdata_init(struct sindex *si) {
     }
 }
 
-/* Stores the per object numeric and facet data.
+/* Stores the per document numeric and facet data.
  * This is split from word position information as this will
  * mostly be used during large scale aggregations
  */
-static inline void store_facet_num_data(struct sindex *si, struct obj_data *od) {
+static inline void store_facet_num_data(struct sindex *si, struct doc_data *od) {
     // Calculate storage size required to store the data
     // Start with size required to store numeric data
     size_t size = si->map->num_numbers * sizeof(double);
@@ -208,12 +208,12 @@ static inline void store_facet_num_data(struct sindex *si, struct obj_data *od) 
     // Reserve space in lmdb to store this data
     MDB_val key,data;
     key.mv_size = sizeof(uint32_t);
-    key.mv_data = &od->oid;
+    key.mv_data = &od->docid;
     data.mv_data = NULL;
     data.mv_size = size;
 
-    if (mdb_put(si->txn, si->oid2fndata_dbi, &key, &data, MDB_RESERVE) != 0) {
-        M_ERR("Failed to allocate data to store oid2fndata for oid %u", od->oid);
+    if (mdb_put(si->txn, si->docid2fndata_dbi, &key, &data, MDB_RESERVE) != 0) {
+        M_ERR("Failed to allocate data to store docid2fndata for docid %u", od->docid);
         return;
     }
 
@@ -308,8 +308,8 @@ static void dump_word_data(uint8_t *head) {
 }
 #endif
 
-/* Returns number of occurences of word id in a given object */
-static inline int obj_wid_count(struct obj_data *od, uint32_t wid) {
+/* Returns number of occurences of word id in a given document */
+static inline int obj_wid_count(struct doc_data *od, uint32_t wid) {
     khiter_t k = kh_get(UNIQWID, od->kh_uniqwid, wid);
     if (LIKELY(k != kh_end(od->kh_uniqwid))) {
         return kh_value(od->kh_uniqwid, k);
@@ -318,8 +318,8 @@ static inline int obj_wid_count(struct obj_data *od, uint32_t wid) {
 }
 
 
-/* Stores word id / frequency and positions for each object */
-static void store_wordpos_data(struct sindex *si, struct obj_data *od) {
+/* Stores word id / frequency and positions for each document */
+static void store_wordpos_data(struct sindex *si, struct doc_data *od) {
     if (UNLIKELY(kv_size(od->kv_widpos) == 0)) return;
     /* First sort the position information on wid.priority.position */
     wp_hold_t *h = malloc(sizeof(wp_hold_t) * kv_size(od->kv_widpos));
@@ -399,25 +399,25 @@ next_widpos:
     // Reserve space in lmdb to store this data
     MDB_val key, value;
     key.mv_size = sizeof(uint32_t);
-    key.mv_data = &od->oid;
+    key.mv_data = &od->docid;
     value.mv_data = data;
     value.mv_size = (dpos - data);
 
-    if (mdb_put(si->txn, si->oid2wpos_dbi, &key, &value, 0) != 0) {
-        M_ERR("Failed to store oid2wpos for oid %u", od->oid);
+    if (mdb_put(si->txn, si->docid2wpos_dbi, &key, &value, 0) != 0) {
+        M_ERR("Failed to store docid2wpos for docid %u", od->docid);
     }
     free(data);
     free(h);
 }
 
-/* Stores the per object data into lmdb. Per object data is
+/* Stores the per document data into lmdb. Per document data is
  * store in 2 different dbi's.  One for word / freq / position
  * the other for numbers & facets.
  *
- * Finally clears memory allocated to store per object index info
+ * Finally clears memory allocated to store per document index info
  */
-static void sindex_store_objdata(struct sindex *si) {
-    struct obj_data *od = &si->wc->od;
+static void sindex_store_docdata(struct sindex *si) {
+    struct doc_data *od = &si->wc->od;
 
     store_facet_num_data(si, od);
     store_wordpos_data(si, od);
@@ -439,30 +439,30 @@ static void sindex_store_objdata(struct sindex *si) {
 
 /* Indexes a double into the respective num_dbi */
 static inline void index_number(struct sindex *si, int priority, double d) {
-    uint32_t oid = si->wc->od.oid;
+    uint32_t docid = si->wc->od.docid;
     MDB_val key, data;
     key.mv_size = sizeof(d);
     key.mv_data = &d;
-    data.mv_size = sizeof(oid);
-    data.mv_data = &oid;
+    data.mv_size = sizeof(docid);
+    data.mv_data = &docid;
     mdb_put(si->txn, si->num_dbi[priority], &key, &data, 0);
 }
 
 static inline void index_boolean(struct sindex *si, int priority, bool b) {
     wid2bmap_add(si->boolid2bmap_dbi, si->wc->kh_boolid2bmap, si->txn, 
-                         b, si->wc->od.oid, priority);
+                         b, si->wc->od.docid, priority);
 }
 
 /**
  * Takes a facet string and generates a facetid using farmhash.  It then maps
- * the facetid to a bmap of objids which contain this facet.  It also stores this facetid
- * in the per object index data
+ * the facetid to a bmap of docids which contain this facet.  It also stores this facetid
+ * in the per document index data
  */
 static inline void index_string_facet(struct sindex *si, const char *str, int priority) {
     // Facetid is a 32 bit farmhash of the string to be indexed
     // TODO: Collisions ? Use different seed?
     // TODO: Maintain a hashtable for a bulk write instead of hashing everytime wit farmhash?
-    struct obj_data *od = &si->wc->od;
+    struct doc_data *od = &si->wc->od;
     uint32_t facet_id = farmhash32(str, strlen(str));
 
     // See if facetid2str is already present, else store it in a hashtable
@@ -493,13 +493,13 @@ static inline void index_string_facet(struct sindex *si, const char *str, int pr
     kv_push(uint32_t, od->facet_data[priority], facet_id);
     // Update facetid -> bitmap of all documents with this facet id
     wid2bmap_add(si->facetid2bmap_dbi, si->wc->kh_facetid2bmap, si->txn, 
-                         facet_id, od->oid, priority);
+                         facet_id, od->docid, priority);
 }
 
 static void string_new_word_pos(word_pos_t *wp, void *data) {
     struct analyzer_data *ad = data;
     struct sindex *si = ad->si;
-    struct obj_data *od = &si->wc->od;
+    struct doc_data *od = &si->wc->od;
     int p = ad->priority + 1;
     int limit = wp->word.length >= LEVLIMIT ? LEVLIMIT : wp->word.length;
 
@@ -521,16 +521,16 @@ static void string_new_word_pos(word_pos_t *wp, void *data) {
     // Set the top-level wid to obj id mapping
     for (int i = 0; i < limit; i++) {
         wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2bmap, si->txn, 
-                     od->twid[i], od->oid, 0);
+                     od->twid[i], od->docid, 0);
         wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2bmap, si->txn, 
-                     od->twid[i], od->oid, p);
+                     od->twid[i], od->docid, p);
     }
 
     // Set the wid to obj id mapping
     wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
-            wid, od->oid, 0);
+            wid, od->docid, 0);
     wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
-            wid, od->oid, p);
+            wid, od->docid, p);
 
     // Store wid positions
     wid_pos_t *widpos = malloc(sizeof(wid_pos_t));
@@ -569,12 +569,12 @@ static void index_string(struct sindex *si, const char *str, int priority) {
 
 
 /**
- * Parses and indexes an object.  This uses the index schema map and updates the 
+ * Parses and indexes an document.  This uses the index schema map and updates the 
  * write cache with parsed information.
  */
-static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
-    struct obj_data *od = &si->wc->od;
-    // Browse the schema and retrieve the fields from the json object based on 
+static void parse_index_document(struct sindex *si, struct schema *s, json_t *j) {
+    struct doc_data *od = &si->wc->od;
+    // Browse the schema and retrieve the fields from the json document based on 
     // schema.  Ignore or throwaway fields which do not map to field type present
     // in schema
     while (s) {
@@ -629,7 +629,7 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
                     if (s->is_indexed) {
                         index_number(si, s->i_priority, d);
                     }
-                    // TODO: Decide on how to store arrays in objdata and index
+                    // TODO: Decide on how to store arrays in docdata and index
                     // Probably the same way we handle facets?
                 }
             }
@@ -646,7 +646,7 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
             case F_OBJECT: {
                 json_t *jo = json_object_get(j, s->fname);
                 if (!json_is_object(jo)) break;
-                parse_index_object(si, s->child, jo);
+                parse_index_document(si, s->child, jo);
             }
             break;
             case F_OBJLIST: {
@@ -656,7 +656,7 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
                 json_t *jo;
                 json_array_foreach(jarr, jid, jo) {
                     if (json_is_object(jo)) {
-                        parse_index_object(si, s->child, jo);
+                        parse_index_document(si, s->child, jo);
                     }
                 }
             }
@@ -669,26 +669,26 @@ static void parse_index_object(struct sindex *si, struct schema *s, json_t *j) {
 }
 
 
-/* Entry point to parse and index an object, this assumes that 
+/* Entry point to parse and index a document, this assumes that 
  * the write cache is ready */
-static void si_add_object(struct sindex *si, json_t *j) {
-    // Get the oid from the object, this was previously set when
-    // adding the object to sdata
-    si->wc->od.oid = json_number_value(json_object_get(j, J_OID));
-    // Setup per object data
-    sindex_objdata_init(si);
+static void si_add_document(struct sindex *si, json_t *j) {
+    // Get the docid from the document, this was previously set when
+    // adding the document to sdata
+    si->wc->od.docid = json_number_value(json_object_get(j, J_DOCID));
+    // Setup per document data
+    sindex_docdata_init(si);
 
-    // Index schema is used to parse the object
-    parse_index_object(si, si->map->index_schema->child, j);
+    // Index schema is used to parse the document
+    parse_index_document(si, si->map->index_schema->child, j);
 
-    // Store the parsed object and cleanup
-    sindex_store_objdata(si);
+    // Store the parsed document and cleanup
+    sindex_store_docdata(si);
 }
 
-/* Adds one or more objects to the shard index.  This parses the input and updates
+/* Adds one or more documents to the shard index.  This parses the input and updates
  * the various num / string / facet dbis. */
-void sindex_add_objects(struct sindex *si, json_t *j) {
-    // Make sure we are ready to index these objects
+void sindex_add_documents(struct sindex *si, json_t *j) {
+    // Make sure we are ready to index these documents
     if (UNLIKELY((!j))) return;
     if (UNLIKELY(json_is_null(j))) return;
     if (UNLIKELY(si->map == NULL)) return;
@@ -700,10 +700,10 @@ void sindex_add_objects(struct sindex *si, json_t *j) {
         size_t idx;
         json_t *obj;
         json_array_foreach(j, idx, obj) {
-            si_add_object(si, obj);
+            si_add_document(si, obj);
         }
     } else {
-        si_add_object(si, j);
+        si_add_document(si, j);
     }
     si_write_end(si);
 }
@@ -782,8 +782,8 @@ struct sindex *sindex_new(struct shard *shard) {
     mdb_dbi_open(si->txn, DBI_TWID2WIDBMAP, MDB_CREATE|MDB_INTEGERKEY, &si->twid2widbmap_dbi);
     mdb_dbi_open(si->txn, DBI_TWID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->twid2bmap_dbi);
     mdb_dbi_open(si->txn, DBI_WID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->wid2bmap_dbi);
-    mdb_dbi_open(si->txn, DBI_OID2FNDATA, MDB_CREATE|MDB_INTEGERKEY, &si->oid2fndata_dbi);
-    mdb_dbi_open(si->txn, DBI_OID2WPOS, MDB_CREATE|MDB_INTEGERKEY, &si->oid2wpos_dbi);
+    mdb_dbi_open(si->txn, DBI_DOCID2FNDATA, MDB_CREATE|MDB_INTEGERKEY, &si->docid2fndata_dbi);
+    mdb_dbi_open(si->txn, DBI_DOCID2WPOS, MDB_CREATE|MDB_INTEGERKEY, &si->docid2wpos_dbi);
     mdb_dbi_open(si->txn, DBI_PHRASE, MDB_CREATE|MDB_INTEGERKEY, &si->phrase_dbi);
 
     strcat(path, "/dtrie.db");

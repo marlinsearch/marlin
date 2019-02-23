@@ -252,7 +252,7 @@ static int api_handler(h2o_handler_t *self, h2o_req_t *req, int (*cb_handler)(h2
    } else {
         int start = APIKEY_SIZE+APPID_SIZE+req->method.len+path_len-1;
         // Till we reach /1/
-        // Let us try to find out a /* url for objects / keys etc.,
+        // Let us try to find out a /* url for documents / keys etc.,
         while (start > 3) {
             start--;
             if (hashurl[start] == '/') {
