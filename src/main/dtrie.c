@@ -164,7 +164,7 @@ static struct dnode *get_free_node(struct dtrie *dt, NTYPE type, struct dnode_id
     if (LIKELY(type < NS_MAX)) {
         uint32_t foffset = bmap_get_first(&dt->freemaps[type]);
         // We have a free page
-        if (foffset != 0xFFFF) {
+        if (foffset != 0xFFFFFFFF) {
             nid->offset = foffset;
             // Remove the id from freemap
             bmap_remove(&dt->freemaps[type], foffset);

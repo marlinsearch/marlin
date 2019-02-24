@@ -3,8 +3,9 @@
 #define _DBI_H_
 
 // Shard data dbi
-#define DBI_SID2JSON    "sid2json_dbi"
-#define DBI_ID2SID      "id2sid_dbi"
+#define DBI_DOCID2JSON      "docid2json_dbi"
+#define DBI_ID2DOCID        "id2docid_dbi"
+#define DBI_USEDFREE        "usedfree_dbi"
 
 // Shard index dbi
 #define DBI_NUM             "num_dbi"

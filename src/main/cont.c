@@ -490,9 +490,9 @@ struct cont *cont_new(uint16_t id) {
     }
     return c;
 }
+
 // TODO: FIX ISSUES !!!
 //
-
 uint16_t cont_get_first(const struct cont *c) {
     uint32_t card = cont_cardinality(c);
     uint16_t item = 0;
@@ -501,22 +501,23 @@ uint16_t cont_get_first(const struct cont *c) {
         // Array container
         return c->buffer[2];
     } else {
-        // bitset container
-        printf("NOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\n");
-        printf("NOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\n");
-        printf("NOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\n");
-        printf("NOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\n");
-        printf("NOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\n");
-        exit(1);
-        /*
-        struct riter *iter = calloc(1, sizeof(struct riter));
-        iter->bufpos = -1;
-        cont_next_bitset(c, iter);
-        if (cont_has_next(c, iter)) {
-            item = cont_get_next(c, iter);
+        // Bitset container
+        // TODO: Test This !!
+        printf("Needs test test test test test\n");
+        printf("Needs test test test test test\n");
+        printf("Needs test test test test test\n");
+        printf("Needs test test test test test\n");
+        uint32_t base = 0;
+        const uint64_t *buffer = (const uint64_t *)&c->buffer[2];
+        for (int i=0; i<BCUTOFF; i++) {
+            uint64_t w = buffer[i];
+            if (w != 0) {
+                int r = __builtin_ctzll(w);
+                return r+base;
+            }
+            base += 64;
         }
-        free(iter);
-        */
+ 
     }
     return item;
 }

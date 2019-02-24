@@ -468,9 +468,9 @@ struct bmap *oper_or(const struct oper *o) {
 }
 
 // Returns the first position set
-// NOTE : Returns 0xFFFF if nothing is found
+// NOTE : Returns 0xFFFFFFFF if nothing is found
 uint32_t bmap_get_first(struct bmap *b) {
-    uint32_t f = 0xFFFF;
+    uint32_t f = 0xFFFFFFFF;
     if (b->num_c) {
         struct cont *c = &b->c[0];
         return ((uint32_t)c->buffer[0] << 16) | (uint32_t)cont_get_first(c);

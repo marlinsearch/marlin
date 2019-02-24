@@ -15,6 +15,9 @@
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 
+#define USED_BMAP_ID IDPRIORITY(1, 0)
+#define FREE_BMAP_ID IDPRIORITY(2, 0)
+
 // Save last docid in mdb, assumes a txn is already in progress
 static void save_last_docid(struct sdata *sd) {
     uint32_t x = 0xFFFFFFFF;
@@ -23,7 +26,7 @@ static void save_last_docid(struct sdata *sd) {
     key.mv_data = &x;
     data.mv_data = &sd->last_docid;
     data.mv_size = sizeof(sd->last_docid);
-    mdb_put(sd->txn, sd->sid2json_dbi, &key, &data, 0);
+    mdb_put(sd->txn, sd->usedfree_dbi, &key, &data, 0);
 }
 
 // Loads sdata info from mdb, assumes a transaction is already open
@@ -32,18 +35,46 @@ static void load_sdata_info(struct sdata *sd) {
     MDB_val key, data;
     key.mv_size = sizeof(x);
     key.mv_data = &x;
-    if (mdb_get(sd->txn, sd->sid2json_dbi, &key, &data) == 0) {
+    if (mdb_get(sd->txn, sd->usedfree_dbi, &key, &data) == 0) {
         sd->last_docid = *(uint32_t *) data.mv_data;
     } else {
         save_last_docid(sd);
     }
+
+    // Load the free and used doc ids
+    // We manipulate and use the free_bmap and used_bmap for use during queries
+    // and documents add or deletes
+    struct bmap *b = mbmap_load_bmap(sd->txn, sd->usedfree_dbi, FREE_BMAP_ID);
+    if (b != NULL) {
+        sd->free_bmap = bmap_duplicate(b);
+        bmap_free(b);
+    } else {
+        sd->free_bmap = bmap_new();
+    }
+
+    b = mbmap_load_bmap(sd->txn, sd->usedfree_dbi, USED_BMAP_ID);
+    if (b != NULL) {
+        sd->used_bmap = bmap_duplicate(b);
+        bmap_free(b);
+    } else {
+        sd->used_bmap = bmap_new();
+    }
 }
 
-/* Gets a free object id */
-// TODO: Handle deletions and maintain free docids in bitmap
+/* Gets a free object id.  First looks for deleted items in free_bmap and removes it if it 
+ * exists both in free_bmap and free_mbmap */
 static uint32_t get_free_docid(struct sdata *sd) {
-    uint32_t new_docid = sd->last_docid;
-    sd->last_docid++;
+    uint32_t new_docid = bmap_get_first(sd->free_bmap);
+    // If the free_bmap is empty, we get UINT32MAX
+    if (new_docid == 0xFFFFFFFF) {
+        // Use the last_docid and increment it
+        new_docid = sd->last_docid;
+        sd->last_docid++;
+    } else {
+        // We got a previously deleted entry, make use of it
+        bmap_remove(sd->free_bmap, new_docid);
+        mbmap_remove(sd->free_mbmap, new_docid, sd->txn, sd->usedfree_dbi);
+    }
     return new_docid;
 }
 
@@ -65,12 +96,17 @@ static char *jcompress(const char *src, int *compressed_len) {
 #endif
 }
 
-static void sdata_add_object(struct sdata *sd, json_t *j) {
+static void sdata_add_document(struct sdata *sd, json_t *j) {
     // Make sure it is a valid object before trying to add it
     if (!j) return;
     if (json_is_null(j)) return;
     // TODO: Handle free entries from free_bm, also read below note !
     uint32_t new_docid = get_free_docid(sd);
+
+    // Update used_bmap and used_mbmap with new docid
+    bmap_add(sd->used_bmap, new_docid);
+    mbmap_add(sd->used_mbmap, new_docid, sd->txn, sd->usedfree_dbi);
+
     json_object_set_new(j, J_DOCID, json_integer(new_docid));
     char *jdata = json_dumps(j, JSON_PRESERVE_ORDER|JSON_COMPACT);
     int compressed_len;
@@ -82,15 +118,15 @@ static void sdata_add_object(struct sdata *sd, json_t *j) {
     key.mv_data = &new_docid;
     data.mv_size = compressed_len;
     data.mv_data = compressed_data;
-    mdb_put(sd->txn, sd->sid2json_dbi, &key, &data, 0);
+    mdb_put(sd->txn, sd->docid2json_dbi, &key, &data, 0);
 
-    // Update ID2SID - Id to ShardId
+    // Update document id to docid
     const char *id = json_string_value(json_object_get(j, J_ID));
     key.mv_data = (void *)id;
-    key.mv_size = sd->custom_id? strlen(id) + 1 : 22;
+    key.mv_size = strlen(id) + 1;
     data.mv_size = sizeof(uint32_t);
     data.mv_data = &new_docid;
-    mdb_put(sd->txn, sd->id2sid_dbi, &key, &data, 0);
+    mdb_put(sd->txn, sd->id2docid_dbi, &key, &data, 0);
 
     free(jdata);
     free(compressed_data);
@@ -104,38 +140,61 @@ static void sdata_add_object(struct sdata *sd, json_t *j) {
 void sdata_add_documents(struct sdata *sd, json_t *j) {
     uint32_t docid = sd->last_docid;
     mdb_txn_begin(sd->env, NULL, 0, &sd->txn);
+
+    // We will be manipulating used_mbmap and free_mbmap, let us load it
+    sd->used_mbmap = mbmap_new(USED_BMAP_ID);
+    sd->free_mbmap = mbmap_new(FREE_BMAP_ID);
+    mbmap_load(sd->used_mbmap, sd->txn, sd->usedfree_dbi);
+    mbmap_load(sd->free_mbmap, sd->txn, sd->usedfree_dbi);
+
     if (json_is_array(j)) {
         size_t docid;
         json_t *obj;
         json_array_foreach(j, docid, obj) {
-            sdata_add_object(sd, obj);
+            sdata_add_document(sd, obj);
         }
     } else {
-        sdata_add_object(sd, j);
+        sdata_add_document(sd, j);
     }
     // store the free_bm / used_bm docid maps
     if (docid != sd->last_docid) {
         save_last_docid(sd);
     }
+
+    // The used_mbmap is definitely updated and possibly free_mbmap too
+    // save it
+    mbmap_save(sd->used_mbmap, sd->txn, sd->usedfree_dbi);
+    mbmap_save(sd->free_mbmap, sd->txn, sd->usedfree_dbi);
+
+    mbmap_free(sd->used_mbmap);
+    mbmap_free(sd->free_mbmap);
+
     mdb_txn_commit(sd->txn);
  
 }
 
 void sdata_free(struct sdata *sd) {
-    mdb_dbi_close(sd->env, sd->id2sid_dbi);
-    mdb_dbi_close(sd->env, sd->sid2json_dbi);
+    mdb_dbi_close(sd->env, sd->id2docid_dbi);
+    mdb_dbi_close(sd->env, sd->docid2json_dbi);
+    mdb_dbi_close(sd->env, sd->usedfree_dbi);
     mdb_env_close(sd->env);
+
+    bmap_free(sd->used_bmap);
+    bmap_free(sd->free_bmap);
     free(sd);
 }
 
 void sdata_clear(struct sdata *sd) {
     mdb_txn_begin(sd->env, NULL, 0, &sd->txn);
     int rc = 0;
-    if ((rc = mdb_drop(sd->txn, sd->id2sid_dbi, 0)) != 0) {
+    if ((rc = mdb_drop(sd->txn, sd->id2docid_dbi, 0)) != 0) {
         M_ERR("Failed to drop id2sid dbi %d %s", rc, mdb_strerror(rc));
     }
-    if ((rc = mdb_drop(sd->txn, sd->sid2json_dbi, 0)) != 0) {
+    if ((rc = mdb_drop(sd->txn, sd->docid2json_dbi, 0)) != 0) {
         M_ERR("Failed to drop sid2json dbi %d %s", rc, mdb_strerror(rc));
+    }
+    if ((rc = mdb_drop(sd->txn, sd->usedfree_dbi, 0)) != 0) {
+        M_ERR("Failed to drop usedfree dbi %d %s", rc, mdb_strerror(rc));
     }
     mdb_txn_commit(sd->txn);
     sd->last_docid = 1;
@@ -165,7 +224,6 @@ struct sdata *sdata_new(struct shard *shard) {
     struct sdata *s = calloc(1, sizeof(struct sdata));
     s->shard = shard;
     s->last_docid = 1;
-    s->custom_id = false;
     struct index *in = shard->index;
 
     // Create path necessary to store shard data
@@ -180,16 +238,19 @@ struct sdata *sdata_new(struct shard *shard) {
         M_ERR("Error setting mapsize on [%s] %d", in->name, rc);
     }
 
-    mdb_env_set_maxdbs(s->env, 2);
+    mdb_env_set_maxdbs(s->env, 3);
     mdb_env_open(s->env, path, 0, 0664);
     mdb_txn_begin(s->env, NULL, 0, &s->txn);
-    if (mdb_dbi_open(s->txn, DBI_SID2JSON, MDB_CREATE|MDB_INTEGERKEY, &s->sid2json_dbi) != 0) {
-        M_ERR("Failed to load %s dbi", DBI_SID2JSON);
+    if (mdb_dbi_open(s->txn, DBI_USEDFREE, MDB_CREATE|MDB_INTEGERKEY, &s->usedfree_dbi) != 0) {
+        M_ERR("Failed to load %s dbi", DBI_USEDFREE);
+    }
+    if (mdb_dbi_open(s->txn, DBI_DOCID2JSON, MDB_CREATE|MDB_INTEGERKEY, &s->docid2json_dbi) != 0) {
+        M_ERR("Failed to load %s dbi", DBI_DOCID2JSON);
     } else {
         load_sdata_info(s);
     }
-    if (mdb_dbi_open(s->txn, DBI_ID2SID, MDB_CREATE, &s->id2sid_dbi) != 0) {
-        M_ERR("Failed to load %s dbi", DBI_ID2SID);
+    if (mdb_dbi_open(s->txn, DBI_ID2DOCID, MDB_CREATE, &s->id2docid_dbi) != 0) {
+        M_ERR("Failed to load %s dbi", DBI_ID2DOCID);
     }
     mdb_txn_commit(s->txn);
  

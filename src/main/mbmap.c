@@ -1,8 +1,6 @@
 #include "mbmap.h"
 #include "mlog.h"
 
-int wrote = 0;
-
 static inline uint16_t highbits(uint32_t i) {
     return i>>16;
 }
@@ -73,6 +71,7 @@ void mbmap_remove(struct mbmap *b, uint32_t item, MDB_txn *txn, MDB_dbi dbi) {
     uint16_t val = lowbits(item);
     int pos = binary_search(b, id);
     if (pos >= 0) {
+        // Load it if required
         if (!b->c[pos].cont.buffer) {
             uint64_t bid = b->id + b->c[pos].id + 1;
             MDB_val key, data;
@@ -164,13 +163,12 @@ bool mbmap_save(struct mbmap *b, MDB_txn *txn, MDB_dbi dbi) {
     if (b->num_c == 0) {
         id = b->id;
         if (mdb_del(txn, dbi, &key, NULL) != 0) {
-            M_ERR("Failed to delete empty mbmap");
+            //M_DBG("Failed to delete empty mbmap");
         }
         return false;
     }
     // Write header if required
     if (b->write_header) {
-        wrote++;
         id = b->id;
         data.mv_size = sizeof(uint16_t) * (b->num_c + 1);
         int rc = mdb_put(txn, dbi, &key, &data, MDB_RESERVE);
@@ -189,7 +187,6 @@ bool mbmap_save(struct mbmap *b, MDB_txn *txn, MDB_dbi dbi) {
     for (int i=0; i<b->num_c; i++) {
         // If a buffer is valid, dump it
         if (b->c[i].cont.buffer) {
-            wrote++;
             // 0 is taken for header, rest are store with id + 1
             id = b->id + b->c[i].id + 1;
             int len = (cont_cardinality(&b->c[i].cont) > CUTOFF)?CUTOFF:b->c[i].cont.buffer[1];

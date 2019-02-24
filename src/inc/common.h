@@ -12,8 +12,10 @@
 
 #ifdef VALGRIND_TEST
 #define MDB_ENV_SIZE        655360000
+#define MAPSIZE             655360000
 #else
 #define MDB_ENV_SIZE        6553600000
+#define MAPSIZE             PSIZE * PSIZE * 100
 #endif
 
 #define IDPRIORITY(id, priority) ((uint64_t) id << 32 | priority << 16)
@@ -61,6 +63,10 @@
 #define J_NUM_INDEXES   "numIndexes"
 #define J_NUM_SHARDS    "numShards"
 #define J_NUM_JOBS      "numJobs"
+#define J_NUM_DOCS      "numDocuments"
+#define J_NUM_WORDS     "numWords"
+#define J_NUM_TWORDS    "numTopLevelWords"
+#define J_SHARDS        "shards"
 #define J_ID            "_id"
 #define J_DOCID         "_docid"
 #define J_TYPE          "type"

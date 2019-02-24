@@ -256,8 +256,23 @@ static char *index_data_callback(h2o_req_t *req, void *data) {
 static json_t *index_get_info_json(struct index *in) {
     json_t *j = json_object();
     json_object_set_new(j, J_NAME, json_string(in->name));
-    json_object_set_new(j, J_NUM_SHARDS, json_integer(in->num_shards));
     json_object_set_new(j, J_NUM_JOBS, json_integer(in->job_count));
+    json_t *ja = json_array();
+    size_t total_docs = 0;
+    for (int i = 0; i < in->num_shards; i++) {
+        struct shard *s = kv_A(in->shards, i);
+        json_t *js = json_object();
+        size_t shard_docs = bmap_cardinality(s->sdata->used_bmap);
+        char shard_name[32];
+        snprintf(shard_name, sizeof(shard_name), "shard-%d", i);
+        json_object_set_new(js, J_NAME, json_string(shard_name));
+        json_object_set_new(js, J_NUM_DOCS, json_integer(shard_docs));
+        total_docs += shard_docs;
+        json_array_append_new(ja, js);
+    }
+    json_object_set_new(j, J_NUM_DOCS, json_integer(total_docs));
+    json_object_set_new(j, J_NUM_SHARDS, json_integer(in->num_shards));
+    json_object_set_new(j, J_SHARDS, ja);
     return j;
 }
 

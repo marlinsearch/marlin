@@ -14,7 +14,6 @@
 #define PSIZE       4096
 #define CHMAX       0xFFFFFFFF
 #define LEVLIMIT    3
-#define MAPSIZE     PSIZE * PSIZE * 100
 
 KHASH_MAP_INIT_INT(WID2TYPOS, int);
 
