@@ -20,6 +20,7 @@ struct squery {
     struct worker *worker;
     struct query *q;
     struct squery_result *sqres;
+    struct shard *shard;
     int shard_idx;
     MDB_txn *txn;
 };

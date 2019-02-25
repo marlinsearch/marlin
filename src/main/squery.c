@@ -115,7 +115,7 @@ static struct bmap *get_matching_docids(struct squery *sq) {
     // This happens when the query text is empty or not set
     if (num_terms == 0) {
         // Duplicate and send all available docids
-        return bmap_duplicate(shard_get_all_docids(kv_A(sq->q->in->shards, sq->shard_idx)));
+        return bmap_duplicate(shard_get_all_docids(sq->shard));
     }
 
     // This happens when the query text is a single word
@@ -196,7 +196,7 @@ void execute_squery(void *w) {
     // First allocate a sq_result
     sq->sqres = squery_result_new();
     // Let the shard index handle the query now
-    struct shard *s = kv_A(sq->q->in->shards, sq->shard_idx);
+    struct shard *s = sq->shard;
     struct sindex *si = s->sindex;
 
     // Setup a mdb txn

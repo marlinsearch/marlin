@@ -20,6 +20,7 @@ char *execute_query(struct query *q) {
         sq[i].q = q;
         sq[i].worker = &worker;
         sq[i].shard_idx = i;
+        sq[i].shard = kv_A(in->shards, i);
         sq[i].sqres = NULL; // This gets allocated when query is executed.
         threadpool_add(search_pool, execute_squery, &sq[i], 0);
         // TODO: Avoid touching sqres while processing results, this will
