@@ -94,5 +94,9 @@
 // Query attributes
 #define J_QUERY         "q"
 
+// Query response attributes
+#define J_R_TOTALHITS     "totalHits"
+#define J_R_TOOK          "took"
+
 #endif
 

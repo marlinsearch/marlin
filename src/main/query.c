@@ -1,6 +1,7 @@
 #include "query.h"
 #include "squery.h"
 #include "marlin.h"
+#include "utils.h"
 
 static void term_free(term_t *t) {
     wordfree(t->word);
@@ -10,32 +11,64 @@ static void term_free(term_t *t) {
 /* Executes a parsed query.  This inturn sends the query to multiple shards
  * and further processes the results before sending the final response*/
 char *execute_query(struct query *q) {
+
+    struct timeval start, stop;
     struct index *in = q->in;
-    // Initialize a worker
-    struct worker worker;
-    worker_init(&worker, in->num_shards);
     struct squery *sq = malloc(sizeof(struct squery) * in->num_shards);
 
-    for (int i = 0; i < in->num_shards; i++) {
-        sq[i].q = q;
-        sq[i].worker = &worker;
-        sq[i].shard_idx = i;
-        sq[i].shard = kv_A(in->shards, i);
-        sq[i].sqres = NULL; // This gets allocated when query is executed.
-        threadpool_add(search_pool, execute_squery, &sq[i], 0);
-        // TODO: Avoid touching sqres while processing results, this will
-        // in the futue be executed on a remote shard
+    // Start time
+    gettimeofday(&start, NULL);
+
+    if (in->num_shards > 1) {
+        // Initialize a worker
+        struct worker worker;
+        worker_init(&worker, in->num_shards);
+
+        for (int i = 0; i < in->num_shards; i++) {
+            sq[i].q = q;
+            sq[i].worker = &worker;
+            sq[i].shard_idx = i;
+            sq[i].shard = kv_A(in->shards, i);
+            sq[i].sqres = NULL; // This gets allocated when query is executed.
+            threadpool_add(search_pool, execute_squery, &sq[i], 0);
+            // TODO: Avoid touching sqres while processing results, this will
+            // in the futue be executed on a remote shard
+        }
+
+        wait_for_workers(&worker);
+        worker_destroy(&worker);
+    } else {
+        // For single shard indices, directly invoke execute_squery instead of
+        // using the threadpool
+        sq[0].q = q;
+        sq[0].shard_idx = 0;
+        sq[0].worker = NULL;
+        sq[0].shard = kv_A(in->shards, 0);
+        sq[0].sqres = NULL; // This gets allocated when query is executed.
+        execute_squery(&sq[0]);
     }
 
-    wait_for_workers(&worker);
-    worker_destroy(&worker);
+    json_t *j = json_object();
 
-    // TODO: Process response within shardquery
+    // Process response within shardquery
+    int total_hits = 0;
     for (int i = 0; i < in->num_shards; i++) {
+        total_hits += sq[i].sqres->num_hits;
         sqresult_free(sq[i].sqres);
     }
     free(sq);
-    return "";
+
+    // Fill the response
+    json_object_set_new(j, J_R_TOTALHITS, json_integer(total_hits));
+
+    // Finally set the time taken
+    gettimeofday(&stop, NULL);
+    float took = timedifference_msec(start, stop);
+    json_object_set_new(j, J_R_TOOK, json_integer(took + 0.99));
+
+    char *response = json_dumps(j, JSON_PRESERVE_ORDER|JSON_COMPACT);
+    json_decref(j);
+    return response;
 }
 
 /* Generates query terms for a given query.  THis is specific to the ranking model 

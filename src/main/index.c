@@ -472,6 +472,7 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
     struct index *in = data;
     // TODO: Apply query limits 
     struct query *q = NULL;
+    char *response = NULL;
 
     // Load and parse the query object
     json_error_t error;
@@ -491,15 +492,19 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
         dump_query(q);
 
         // TODO: Read filters and other query related configuration
-        execute_query(q);
+        response = execute_query(q);
+    } else {
+        req->res.status = 400;
+        return strdup(J_FAILURE);
     }
 
     if (q) {
         query_free(q);
     }
     json_decref(jq);
-    // TODO: Send query response
-    return strdup(J_SUCCESS);
+
+    // Send query response
+    return response;
 }
 
 

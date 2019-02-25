@@ -192,6 +192,7 @@ void sqresult_free(struct squery_result *sqres) {
 
 void execute_squery(void *w) {
     struct squery *sq = w;
+    int num_terms = kv_size(sq->q->terms);
     M_DBG("Performing squery for shard %d", sq->shard_idx);
     // First allocate a sq_result
     sq->sqres = squery_result_new();
@@ -208,14 +209,15 @@ void execute_squery(void *w) {
     // From the term data, find all documents which match our query
     sq->sqres->docid_map = get_matching_docids(sq);
     if (sq->sqres->docid_map == NULL) {
-        //printf("no matching documents found\n");
+       goto cleanup;
     } else {
+        sq->sqres->num_hits = bmap_cardinality(sq->sqres->docid_map);
         dump_bmap(sq->sqres->docid_map);
         bmap_free(sq->sqres->docid_map);
     }
 
+cleanup:
     // cleanup all termdata
-    int num_terms = kv_size(sq->q->terms);
     for (int i = 0; i < num_terms; i++) {
         termdata_free(&sq->sqres->termdata[i]);
     }
@@ -224,6 +226,8 @@ void execute_squery(void *w) {
     // Abort the read only transaction, we are done executing the query
     mdb_txn_abort(sq->txn);
 
-    worker_done(sq->worker);
+    if (sq->worker) {
+        worker_done(sq->worker);
+    }
 }
 

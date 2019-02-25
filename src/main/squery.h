@@ -14,6 +14,7 @@ typedef struct termdata {
 struct squery_result {
     termdata_t *termdata;
     struct bmap *docid_map;
+    int num_hits;
 };
 
 struct squery {
