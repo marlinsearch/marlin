@@ -20,6 +20,7 @@ void shard_free(struct shard *s);
 void shard_delete(struct shard *s);
 void shard_clear(struct shard *s);
 void shard_set_mapping(struct shard *s, const struct mapping *m);
+struct bmap *shard_get_all_docids(struct shard *s);
 
 #endif
 

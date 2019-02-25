@@ -114,8 +114,8 @@ static struct bmap *get_matching_docids(struct squery *sq) {
 
     // This happens when the query text is empty or not set
     if (num_terms == 0) {
-        // TODO: Duplicate and send all available docids
-        return NULL;
+        // Duplicate and send all available docids
+        return bmap_duplicate(shard_get_all_docids(kv_A(sq->q->in->shards, sq->shard_idx)));
     }
 
     // This happens when the query text is a single word

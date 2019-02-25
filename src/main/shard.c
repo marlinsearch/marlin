@@ -48,6 +48,10 @@ void shard_add_documents(struct shard *s, json_t *j) {
     sindex_add_documents(s->sindex, j);
 }
 
+struct bmap *shard_get_all_docids(struct shard *s) {
+    return s->sdata->used_bmap;
+}
+
 void shard_free(struct shard *s) {
     // Free shard data
     // Note: Pointer check if it valid is done as during
