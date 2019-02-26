@@ -364,27 +364,27 @@ if __name__ == '__main__':
 
     # Ping test
     suite = unittest.TestLoader().loadTestsFromTestCase(TestPing)
-    r = unittest.TextTestRunner(verbosity=5).run(suite)
+    r = unittest.TextTestRunner(verbosity=0).run(suite)
     fail = fail + len(r.failures)
 
     # App tests
     suite = unittest.TestLoader().loadTestsFromTestCase(TestApp)
-    r = unittest.TextTestRunner(verbosity=5).run(suite)
+    r = unittest.TextTestRunner(verbosity=0).run(suite)
     fail = fail + len(r.failures)
 
     # Index tests
     suite = unittest.TestLoader().loadTestsFromTestCase(TestIndex)
-    r = unittest.TextTestRunner(verbosity=5).run(suite)
+    r = unittest.TextTestRunner(verbosity=0).run(suite)
     fail = fail + len(r.failures)
 
     # Index settings tests
     suite = unittest.TestLoader().loadTestsFromTestCase(TestIndexSettings)
-    r = unittest.TextTestRunner(verbosity=5).run(suite)
+    r = unittest.TextTestRunner(verbosity=0).run(suite)
     fail = fail + len(r.failures)
 
     # Index objects tests
     suite = unittest.TestLoader().loadTestsFromTestCase(TestIndexObjects)
-    r = unittest.TextTestRunner(verbosity=5).run(suite)
+    r = unittest.TextTestRunner(verbosity=0).run(suite)
     fail = fail + len(r.failures)
 
 

@@ -3,3 +3,5 @@ build-debug/
 deps/
 test/test.json
 db/
+test/robot/*.html
+test/robot/*.xml

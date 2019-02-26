@@ -101,10 +101,11 @@ static int ping_callback(h2o_handler_t *self, h2o_req_t *req) {
     if (!h2o_memis(req->method.base, req->method.len, H2O_STRLIT("GET")))
         return -1;
 
-    h2o_iovec_t body = h2o_strdup(&req->pool, "pong\n", SIZE_MAX);
+    h2o_iovec_t body = h2o_strdup(&req->pool, "{\"success\": true}", SIZE_MAX);
     req->res.status = 200;
     req->res.reason = "OK";
-    h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_CONTENT_TYPE, NULL, H2O_STRLIT("text/plain"));
+    h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_CONTENT_TYPE, NULL, H2O_STRLIT("application/json"));
+    h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_ACCESS_CONTROL_ALLOW_ORIGIN, NULL, H2O_STRLIT("*"));
     h2o_start_response(req, &generator);
     h2o_send(req, &body, 1, 1);
 
