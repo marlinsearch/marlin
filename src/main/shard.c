@@ -82,8 +82,10 @@ void shard_delete(struct shard *s) {
     sindex_delete(s->sindex);
     s->sindex = NULL;
     // Free the shard
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s", s->base_path);
     shard_free(s);
-    rmdir(s->base_path);
+    rmdir(path);
 }
 
 struct shard *shard_new(struct index *in, uint16_t shard_id) {
