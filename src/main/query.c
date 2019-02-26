@@ -53,6 +53,7 @@ char *execute_query(struct query *q) {
     // Process response within shardquery
     int total_hits = 0;
     for (int i = 0; i < in->num_shards; i++) {
+        M_DBG("Num hits from shard %d is %d", i, sq[i].sqres->num_hits);
         total_hits += sq[i].sqres->num_hits;
         sqresult_free(sq[i].sqres);
     }

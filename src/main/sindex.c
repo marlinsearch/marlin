@@ -741,13 +741,56 @@ void sindex_delete(struct sindex *si) {
     snprintf(path, sizeof(path), "%s/%s", shard->base_path, shard->idx_name);
  
     sindex_free(si);
+    char fpath[PATH_MAX];
+    // Now delete the data and lock files
+    snprintf(fpath, PATH_MAX, "%s/%s", path, MDB_DATA_FILE);
+    unlink(fpath);
+    snprintf(fpath, PATH_MAX, "%s/%s", path, MDB_LOCK_FILE);
+    unlink(fpath);
+    snprintf(fpath, PATH_MAX, "%s/%s", path, DTRIE_FILE);
+    unlink(fpath);
 
     // Remove index folder for this shard_index
     rmdir(path);
 }
 
 void sindex_clear(struct sindex *si) {
-    // TODO: Drop all dbis
+    // Drop all dbis
+    mdb_txn_begin(si->env, NULL, 0, &si->txn);
+    int rc = 0;
+    if ((rc = mdb_drop(si->txn, si->boolid2bmap_dbi, 0)) != 0) {
+        M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
+    }
+    if ((rc = mdb_drop(si->txn, si->docid2fndata_dbi, 0)) != 0) {
+        M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
+    }
+    if ((rc = mdb_drop(si->txn, si->docid2wpos_dbi, 0)) != 0) {
+        M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
+    }
+    if ((rc = mdb_drop(si->txn, si->facetid2bmap_dbi, 0)) != 0) {
+        M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
+    }
+    if ((rc = mdb_drop(si->txn, si->facetid2str_dbi, 0)) != 0) {
+        M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
+    }
+    if ((rc = mdb_drop(si->txn, si->phrase_dbi, 0)) != 0) {
+        M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
+    }
+    if ((rc = mdb_drop(si->txn, si->wid2bmap_dbi, 0)) != 0) {
+        M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
+    }
+    if ((rc = mdb_drop(si->txn, si->twid2bmap_dbi, 0)) != 0) {
+        M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
+    }
+    if ((rc = mdb_drop(si->txn, si->twid2widbmap_dbi, 0)) != 0) {
+        M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
+    }
+    for (int i = 0; i < si->map->num_numbers; i++) {
+        if ((rc = mdb_drop(si->txn, si->num_dbi[i], 0)) != 0) {
+            M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
+        }
+    }
+    mdb_txn_commit(si->txn);
 }
 
 void sindex_free(struct sindex *si) {
@@ -786,7 +829,8 @@ struct sindex *sindex_new(struct shard *shard) {
     mdb_dbi_open(si->txn, DBI_DOCID2WPOS, MDB_CREATE|MDB_INTEGERKEY, &si->docid2wpos_dbi);
     mdb_dbi_open(si->txn, DBI_PHRASE, MDB_CREATE|MDB_INTEGERKEY, &si->phrase_dbi);
 
-    strcat(path, "/dtrie.db");
+    strcat(path, "/");
+    strcat(path, DTRIE_FILE);
     si->trie = dtrie_new(path, si->boolid2bmap_dbi, si->txn);
  
     mdb_txn_commit(si->txn);

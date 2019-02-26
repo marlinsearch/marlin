@@ -209,8 +209,10 @@ void execute_squery(void *w) {
     // From the term data, find all documents which match our query
     sq->sqres->docid_map = get_matching_docids(sq);
     if (sq->sqres->docid_map == NULL) {
+       sq->sqres->num_hits = 0;
        goto cleanup;
     } else {
+        dump_bmap(sq->sqres->docid_map);
         sq->sqres->num_hits = bmap_cardinality(sq->sqres->docid_map);
         dump_bmap(sq->sqres->docid_map);
         bmap_free(sq->sqres->docid_map);

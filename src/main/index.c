@@ -756,6 +756,10 @@ void index_delete(struct index *in) {
     snprintf(path, sizeof(path), "%s/%s/%s/%s", marlin->db_path, in->app->name, 
                                  in->name, SETTINGS_FILE);
     unlink(path);
+    snprintf(path, sizeof(path), "%s/%s/%s/data", marlin->db_path, in->app->name, 
+                                 in->name);
+    // Delete the index/data folder
+    rmdir(path);
     snprintf(path, sizeof(path), "%s/%s/%s", marlin->db_path, in->app->name, 
                                  in->name);
     // Delete the index folder

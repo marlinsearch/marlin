@@ -37,6 +37,7 @@
 #define SETTINGS_FILE   "settings.json"
 #define MDB_DATA_FILE   "data.mdb"
 #define MDB_LOCK_FILE   "lock.mdb"
+#define DTRIE_FILE      "dtrie.db"
 
 // Settings
 #define APPID_SIZE      8

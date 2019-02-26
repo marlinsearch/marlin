@@ -78,13 +78,21 @@ void shard_delete(struct shard *s) {
     // FIrst delete the shard data
     sdata_delete(s->sdata);
     s->sdata = NULL;
-    // Now take car of the search index
+    // Now take care of the search index
     sindex_delete(s->sindex);
     s->sindex = NULL;
-    // Free the shard
+    
+    // Collect path names
     char path[PATH_MAX];
     snprintf(path, sizeof(path), "%s", s->base_path);
+    char fpath[PATH_MAX];
+    snprintf(fpath, sizeof(fpath), "%s/%s", s->base_path, SHARD_FILE);
+    
+    // Free the shard
     shard_free(s);
+
+    // Delete from disk
+    unlink(fpath);
     rmdir(path);
 }
 
