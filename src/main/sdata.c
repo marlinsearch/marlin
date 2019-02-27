@@ -87,11 +87,12 @@ static char *jcompress(const char *src, int *compressed_len) {
     *compressed_len = compressed_data_size;
     return compressed_data;
 #else
-    const int src_size = (int) (strlen(src) + 1 );
-    size_t max_dst_size = compressBound(src_size);
+    const uint32_t src_size = (strlen(src) + 1 );
+    size_t max_dst_size = compressBound(src_size) + sizeof(uint32_t);
     char* compressed_data = malloc(max_dst_size);
-    compress((Bytef *)compressed_data, &max_dst_size, (Bytef *)src, src_size);
-    *compressed_len = max_dst_size;
+    memcpy(compressed_data, &src_size, sizeof(uint32_t));
+    compress((Bytef *)&compressed_data[sizeof(uint32_t)], &max_dst_size, (Bytef *)src, src_size);
+    *compressed_len = max_dst_size + sizeof(uint32_t);
     return compressed_data;
 #endif
 }
@@ -132,13 +133,7 @@ static void sdata_add_document(struct sdata *sd, json_t *j) {
     free(compressed_data);
 }
 
-
-/* Takes one more more documents for a shard and stores it in the shard datastore
- * A shard object id which will be the position of the object in the obj bitmap index is
- * assigned first. Any free ids due to deletions are used in advance to keep our obj
- * ids compact. The documents themselves are zlib/lz4 compressed and stored */
-void sdata_add_documents(struct sdata *sd, json_t *j) {
-    uint32_t docid = sd->last_docid;
+static void start_document_update(struct sdata *sd) {
     mdb_txn_begin(sd->env, NULL, 0, &sd->txn);
 
     // We will be manipulating used_mbmap and free_mbmap, let us load it
@@ -146,6 +141,27 @@ void sdata_add_documents(struct sdata *sd, json_t *j) {
     sd->free_mbmap = mbmap_new(FREE_BMAP_ID);
     mbmap_load(sd->used_mbmap, sd->txn, sd->usedfree_dbi);
     mbmap_load(sd->free_mbmap, sd->txn, sd->usedfree_dbi);
+}
+
+static void end_document_update(struct sdata *sd) {
+    // The used_mbmap is definitely updated and possibly free_mbmap too
+    // save it
+    mbmap_save(sd->used_mbmap, sd->txn, sd->usedfree_dbi);
+    mbmap_save(sd->free_mbmap, sd->txn, sd->usedfree_dbi);
+
+    mbmap_free(sd->used_mbmap);
+    mbmap_free(sd->free_mbmap);
+
+    mdb_txn_commit(sd->txn);
+}
+
+/* Takes one more more documents for a shard and stores it in the shard datastore
+ * A shard object id which will be the position of the object in the obj bitmap index is
+ * assigned first. Any free ids due to deletions are used in advance to keep our obj
+ * ids compact. The documents themselves are zlib/lz4 compressed and stored */
+void sdata_add_documents(struct sdata *sd, json_t *j) {
+    uint32_t docid = sd->last_docid;
+    start_document_update(sd);
 
     if (json_is_array(j)) {
         size_t docid;
@@ -161,16 +177,74 @@ void sdata_add_documents(struct sdata *sd, json_t *j) {
         save_last_docid(sd);
     }
 
-    // The used_mbmap is definitely updated and possibly free_mbmap too
-    // save it
-    mbmap_save(sd->used_mbmap, sd->txn, sd->usedfree_dbi);
-    mbmap_save(sd->free_mbmap, sd->txn, sd->usedfree_dbi);
+    end_document_update(sd);
+}
 
-    mbmap_free(sd->used_mbmap);
-    mbmap_free(sd->free_mbmap);
+char *sdata_get_document(const struct sdata *sd, const char *id) {
+    MDB_txn *txn;
+    mdb_txn_begin(sd->env, NULL, MDB_RDONLY, &txn);
+    char *resp = NULL;
 
-    mdb_txn_commit(sd->txn);
- 
+    // First get the docid from document id
+    uint32_t docid;
+    MDB_val key, data;
+    key.mv_data = (void *)id;
+    key.mv_size = strlen(id) + 1;
+    int rc = 0;
+
+    if ( (rc = mdb_get(txn, sd->id2docid_dbi, &key, &data)) == 0) {
+        docid = *(uint32_t *)data.mv_data;
+        key.mv_data = &docid;
+        key.mv_size = sizeof(uint32_t);
+        if ( (rc = mdb_get(txn, sd->docid2json_dbi, &key, &data)) == 0) {
+            Bytef *jd = data.mv_data;
+            size_t slen = *(uint32_t *)data.mv_data;
+            resp = malloc(slen + 1);
+            uncompress((Bytef *)resp, &slen, &jd[4], data.mv_size);
+        } else {
+            // M_ERR("Failed to get json %s\n", mdb_strerror(rc));
+        }
+    } else {
+        // M_ERR("Failed to get docid %s\n", mdb_strerror(rc));
+    }
+
+    mdb_txn_abort(txn);
+    return resp;
+}
+
+uint32_t sdata_delete_document(struct sdata *sd, const char *id) {
+    // We are probably going to update
+    start_document_update(sd);
+
+    // First get the docid from document id
+    uint32_t docid = 0;
+    MDB_val key, data;
+    key.mv_data = (void *)id;
+    key.mv_size = strlen(id) + 1;
+    int rc = 0;
+
+    // First get the document id
+    if ( (rc = mdb_get(sd->txn, sd->id2docid_dbi, &key, &data)) == 0) {
+        docid = *(uint32_t *)data.mv_data;
+        // Delete it from id 2 docid
+        mdb_del(sd->txn, sd->id2docid_dbi, &key, NULL);
+
+        key.mv_data = &docid;
+        key.mv_size = sizeof(uint32_t);
+        // Delete it from docid2json
+        mdb_del(sd->txn, sd->docid2json_dbi, &key, NULL);
+
+        // Remove it from  used_bmap
+        bmap_remove(sd->used_bmap, docid);
+        mbmap_remove(sd->used_mbmap, docid, sd->txn, sd->usedfree_dbi);
+
+        // Add to free_bmap
+        bmap_add(sd->free_bmap, docid);
+        mbmap_add(sd->used_mbmap, docid, sd->txn, sd->usedfree_dbi);
+    } 
+
+    end_document_update(sd);
+    return docid;
 }
 
 void sdata_free(struct sdata *sd) {

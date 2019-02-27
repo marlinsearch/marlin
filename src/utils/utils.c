@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include "utils.h"
+#include "common.h"
 #include "farmhash-c.h"
 
 /* Generates a random string */
@@ -74,3 +75,22 @@ float timedifference_msec(struct timeval t0, struct timeval t1) {
     return (t1.tv_sec - t0.tv_sec) * 1000.0f + (t1.tv_usec - t0.tv_usec) / 1000.0f;
 }
 
+char *http_error(h2o_req_t *req, HTTP_CODE code) {
+    req->res.status = code;
+    switch (code) {
+        case HTTP_NOT_FOUND:
+            req->res.reason = "Not Found";
+            break;
+        case HTTP_BAD_REQUEST:
+            req->res.reason = "Bad Request";
+            break;
+        case HTTP_SERVER_ERROR:
+            req->res.reason = "Internal Error";
+            break;
+        case HTTP_TOO_MANY:
+            req->res.reason = "Too Many Requests";
+        default:
+            break;
+    }
+    return strdup(J_FAILURE);
+}

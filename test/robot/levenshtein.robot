@@ -4,6 +4,7 @@ Resource  common.robot
 *** Variables ***
 ${settings}     {"indexedFields": ["str"] }
 
+
 *** Test Cases ***
 Create a new application
     Set Headers  ${header}
@@ -21,19 +22,22 @@ Configure the index
     Integer     response status     200
 
 Load some data
-   @{json_data}  Set Variable   
-   ...  [
-   ...   {"str": "aaaa"},
-   ...   {"str": "aaaa bbbb"},
-   ...   {"str": "aaaa bbbb cccc"},
-   ...   {"str": "aaaa bbbb cccc dddd"},
-   ...   {"str": "aaaa bbbb cccc dddd eeee"},
-   ...   {"str": "aaaabbbb cccc dddd eeee"},
-   ...   {"str": "aaaa bbbbcccc ddddeeee"},
-   ...   {"str": "aaaabbbbccccddddeeee"}
-   ...  ]
-
+    @{json_data}  Set Variable   
+       ...  [
+       ...   {"str": "test"},
+       ...   {"str": "best"},
+       ...   {"str": "atest"},
+       ...   {"str": "testa"},
+       ...   {"str": "tset"},
+       ...   {"str": "etst"},
+       ...   {"str": "tets"},
+       ...   {"str": "tesg"},
+       ...   {"str": "tset"},
+       ...   {"str": "tast"},
+       ...   {"str": "tegt"}
+       ...  ]
     ${json_str}     Catenate    @{json_data}
+
     Set Headers  ${appheader}
     POST         /1/indexes/testindex   ${json_str}
     Integer     response status     200
@@ -43,37 +47,49 @@ Test an empty query
     Set Headers  ${appheader}
     POST         /1/indexes/testindex/query  {"q": ""}
     Integer     response status     200
-    Integer     $.totalHits         8
+    Integer     $.totalHits         11
 
-Test query aaaa
+Test query test
     Set Headers  ${appheader}
-    POST         /1/indexes/testindex/query  {"q": "aaaa"}
+    POST         /1/indexes/testindex/query  {"q": "test"}
     Integer     response status     200
-    Integer     $.totalHits         8
+    Integer     $.totalHits         11
 
-Test query baaa
+Test query btest
     Set Headers  ${appheader}
-    POST         /1/indexes/testindex/query  {"q": "baaa"}
+    POST         /1/indexes/testindex/query  {"q": "btest"}
     Integer     response status     200
-    Integer     $.totalHits         8
+    Integer     $.totalHits         4
 
-Test query baaa bbbb
+Test query atest
     Set Headers  ${appheader}
-    POST         /1/indexes/testindex/query  {"q": "baaa bbbb"}
+    POST         /1/indexes/testindex/query  {"q": "atest"}
+    Integer     response status     200
+    Integer     $.totalHits         3
+
+Test query ctest
+    Set Headers  ${appheader}
+    POST         /1/indexes/testindex/query  {"q": "ctest"}
+    Integer     response status     200
+    Integer     $.totalHits         3
+
+Test query tes
+    Set Headers  ${appheader}
+    POST         /1/indexes/testindex/query  {"q": "tes"}
+    Integer     response status     200
+    Integer     $.totalHits         3
+
+Test query te
+    Set Headers  ${appheader}
+    POST         /1/indexes/testindex/query  {"q": "te"}
     Integer     response status     200
     Integer     $.totalHits         5
 
-Test query aaaa bbbb
+Test query t
     Set Headers  ${appheader}
-    POST         /1/indexes/testindex/query  {"q": "aaaa bbbb"}
+    POST         /1/indexes/testindex/query  {"q": "t"}
     Integer     response status     200
-    Integer     $.totalHits         7
-
-Test query aaaa bbbb cccc dddd e
-    Set Headers  ${appheader}
-    POST         /1/indexes/testindex/query  {"q": "aaaa bbbb cccc dddd e"}
-    Integer     response status     200
-    Integer     $.totalHits         4
+    Integer     $.totalHits         8
 
 Delete the index
     Set Headers  ${appheader}

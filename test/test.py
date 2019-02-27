@@ -387,6 +387,8 @@ if __name__ == '__main__':
     r = unittest.TextTestRunner(verbosity=0).run(suite)
     fail = fail + len(r.failures)
 
+    os.system("cd robot && python -m robot .")
+
 
     if not live:
         stop_marlin()

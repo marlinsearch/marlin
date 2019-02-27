@@ -98,6 +98,7 @@ void sindex_free(struct sindex *si);
 void sindex_delete(struct sindex *si);
 void sindex_clear(struct sindex *si);
 void sindex_set_mapping(struct sindex *si, const struct mapping *map);
+void sindex_delete_document(struct sindex *si, const json_t *j, uint32_t docid);
 
 #endif
 

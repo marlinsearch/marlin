@@ -1,13 +1,5 @@
 *** Settings ***
-Library         REST    http://localhost:9002
-
-
-*** Variables ***
-${header}   {"x-marlin-application-id": "abcdefgh", "x-marlin-rest-api-key": "12345678901234567890123456789012"}
-${appheader}  {"x-marlin-application-id": "aaaaaaaa", "x-marlin-rest-api-key": "12345678901234567890123456789012"}
-${app}  {"name" : "appfortests", "appId": "aaaaaaaa", "apiKey": "12345678901234567890123456789012"}
-${index}  {"name" : "testindex", "numShards": 5}
-${settings}     {"indexedFields": ["str", "strlist", "facet", "facetlist", "spell", "id", "num", "numlist", "bool"], "facetFields": ["facet", "facetlist", "facetonly"] }
+Resource  common.robot
 
 *** Test Cases ***
 Create a new application
@@ -30,7 +22,7 @@ Load some data
     Set Headers  ${appheader}
     POST         /1/indexes/testindex  ${testjson}[data]
     Integer     response status     200
-    Sleep       2s
+    Wait Until Keyword Succeeds	100x	10ms   No Jobs
 
 Test an empty query
     ${testjson}  Input  ${CURDIR}/../test.json

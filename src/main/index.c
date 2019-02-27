@@ -118,11 +118,17 @@ static void index_add_documents(struct index *in, json_t *j) {
         // to send to the shard the document belongs.  Add it to the
         // shard array
         json_array_foreach(j, index, jo) {
-            char *id = generate_docid(in->fctx);
-            json_object_set_new(jo, J_ID, json_string(id));
-            int sid = get_shard_routing_id(id, in->num_shards);
+            const char *orig_id = json_string_value(json_object_get(jo, J_ID));
+            int sid = 0;
+            if (!orig_id) {
+                char *id = generate_docid(in->fctx);
+                json_object_set_new(jo, J_ID, json_string(id));
+                sid = get_shard_routing_id(id, in->num_shards);
+                free(id);
+            } else {
+                sid = get_shard_routing_id(orig_id, in->num_shards);
+            }
             json_array_append(sh_j[sid], jo);
-            free(id);
         }
 
 #ifndef USE_INDEX_THREAD_POOL
@@ -141,6 +147,18 @@ static void index_add_documents(struct index *in, json_t *j) {
         index_worker_add_documents(in, sh_j);
 #endif
         free(sh_j);
+    } else {
+        const char *orig_id = json_string_value(json_object_get(j, J_ID));
+        int sid = 0;
+        if (!orig_id) {
+            char *id = generate_docid(in->fctx);
+            json_object_set_new(j, J_ID, json_string(id));
+            sid = get_shard_routing_id(id, in->num_shards);
+            free(id);
+        } else {
+            sid = get_shard_routing_id(orig_id, in->num_shards);
+        }
+        shard_add_documents(kv_A(in->shards, sid), j);
     }
 }
 
@@ -153,6 +171,11 @@ static void index_work_job(void *data) {
         switch (job->type) {
             case JOB_ADD:
                 index_add_documents(in, job->j);
+                break;
+            case JOB_DELETE: {
+                struct shard *s = kv_A(in->shards, job->id);
+                shard_delete_document(s, job->j);
+                }
                 break;
             default:
                 break;
@@ -468,6 +491,88 @@ static void query_string_word_cb(word_pos_t *wp, void *data) {
     kv_push(word_t *, q->words, word);
 }
 
+
+static char *parse_req_document_id(struct index *in, h2o_req_t *req) {
+    char strid[PATH_MAX];
+    int path_len = req->query_at < req->path.len ? req->query_at: req->path.len;
+    int start = path_len;
+    while (start > 3) {
+        start--;
+        if (req->path.base[start] == '/') {
+            if ((path_len - start) > PATH_MAX) {
+                M_ERR("Document id too big");
+                req->res.status = 400;
+                req->res.reason = "Bad Request";
+                return NULL;
+            } else {
+                memcpy(strid, &req->path.base[start+1], path_len+1-start);
+                strid[path_len-start-1] = '\0';
+            }
+            break;
+        }
+    }
+    return strdup(strid);
+}
+
+
+static char *index_get_document_callback(h2o_req_t *req, void *data) {
+    struct index *in = data;
+    char *resp = NULL;
+    char *id = parse_req_document_id(in, req);
+    if (id) {
+        int sid = get_shard_routing_id(id, in->num_shards);
+        char *data = shard_get_document(kv_A(in->shards, sid), id);
+        if (!data) {
+            req->res.status = 404;
+            req->res.reason = "Not Found";
+            data = strdup(J_FAILURE);
+        }
+        resp = data;
+    } else {
+        resp = strdup(J_FAILURE);
+        goto send_response;
+    }
+    free(id);
+send_response:
+    return resp;
+}
+
+/* Deletes a single document from the index by the document id */
+static char *index_delete_document_callback(h2o_req_t *req, void *data) {
+    struct index *in = data;
+    char *resp = NULL;
+    char *id = parse_req_document_id(in, req);
+    if (id) {
+        int sid = get_shard_routing_id(id, in->num_shards);
+        char *jd = shard_get_document(kv_A(in->shards, sid), id);
+        // We do not need id anymore
+        free(id);
+        // Handle errors if any
+        if (!jd) {
+            return http_error(req, HTTP_NOT_FOUND);
+        } else {
+            // Load the document to be deleted
+            json_error_t error;
+            json_t *j = json_loads(jd, 0, &error);
+            free(jd);
+            if (!j) {
+                return http_error(req, HTTP_SERVER_ERROR);
+            }
+            struct in_job *job = in_job_new(in, JOB_DELETE);
+            job->j = j;
+            job->id = sid;
+            if (index_add_job(in, job) == 0) {
+                resp = strdup(J_SUCCESS);
+            } else {
+                return http_error(req, HTTP_TOO_MANY);
+            }
+        }
+    } else {
+        resp = strdup(J_FAILURE);
+    }
+    return resp;
+}
+
 static char *index_query_callback(h2o_req_t *req, void *data) {
     struct index *in = data;
     // TODO: Apply query limits 
@@ -539,6 +644,10 @@ const struct api_path apipaths[] = {
     // Bulk
     // Query Index
     {"POST", URL_QUERY, KA_QUERY, index_query_callback},
+    // Get a single document
+    {"GET", URL_MULTI, KA_BROWSE, index_get_document_callback},
+    // delete document
+    {"DELETE", URL_MULTI, KA_DELETE, index_delete_document_callback},
     // Done here
     {"", "", KA_NONE, NULL}
     /*
@@ -571,8 +680,6 @@ const struct api_path apipaths[] = {
     {"PUT", URL_MULTI, KA_UPDATE, index_replace_object_callback},
     // update object
     {"PATCH", URL_MULTI, KA_UPDATE, index_update_object_callback},
-    // delete object
-    {"DELETE", URL_MULTI, KA_DELETE, index_delete_object_callback},
     {"", "", KA_NONE, NULL}
     */
 };

@@ -718,9 +718,7 @@ static void node_lev(struct lev_data *ld, struct dnode *d, int *prev_row, int *p
                 node_walk(ld->dt, d, ld->tr, dist);
                 return;
             } else {
-                if (get_wid(d)) {
-                    node_walk(ld->dt, d, ld->tr, dist);
-                }
+                node_walk(ld->dt, d, ld->tr, dist);
             }
         } else  {
             uint32_t wid = get_wid(d);

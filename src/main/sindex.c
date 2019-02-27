@@ -94,9 +94,22 @@ static void si_write_start(struct sindex *si) {
     mdb_txn_begin(si->env, NULL, 0, &si->txn);
 }
 
-/* Stores a 64bit id to bitmap mapping in lmdb */
-static inline void store_id2mbmap(struct mbmap *b, MDB_dbi dbi, MDB_txn *txn) {
-    mbmap_save(b, txn, dbi);
+/* Stores a id to bitmap mapping in lmdb.  It deletes a mbmap if required */
+static inline void store_id2mbmap(struct sindex *si, struct mbmap *b, MDB_dbi dbi, MDB_txn *txn) {
+    if (UNLIKELY(!mbmap_save(b, txn, dbi))) {
+        // If after a delete, the facetid2bmap dbi no longer exists
+        // we need to delete the facetid2str mapping as it is no longer necessary
+        if (dbi == si->facetid2bmap_dbi) {
+            uint32_t facet_id = b->id >> 32;
+            int rc = 0;
+            MDB_val key;
+            key.mv_size = sizeof(facet_id);
+            key.mv_data = &facet_id;
+            if ((rc = mdb_del(si->txn, si->facetid2str_dbi, &key, NULL) != 0)) {
+                M_ERR("Deindex facetid2str failed %d %u\n", rc, facet_id);
+            }
+        }
+    }
     mbmap_free(b);
 }
 
@@ -121,36 +134,36 @@ static void si_write_end(struct sindex *si) {
 
     // Store bool id to bmap mapping
     kh_foreach_value(si->wc->kh_boolid2bmap, mbmap, {
-        store_id2mbmap(mbmap, si->boolid2bmap_dbi, si->txn);
+        store_id2mbmap(si, mbmap, si->boolid2bmap_dbi, si->txn);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_boolid2bmap);
 
     // Store facet id to bmap mapping
     kh_foreach_value(si->wc->kh_facetid2bmap, mbmap, {
-        store_id2mbmap(mbmap, si->facetid2bmap_dbi, si->txn);
+        store_id2mbmap(si, mbmap, si->facetid2bmap_dbi, si->txn);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_facetid2bmap);
 
     // Store twid to wid mapping
     kh_foreach_value(si->wc->kh_twid2widbmap, mbmap, {
-        store_id2mbmap(mbmap, si->twid2widbmap_dbi, si->txn);
+        store_id2mbmap(si, mbmap, si->twid2widbmap_dbi, si->txn);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_twid2widbmap);
 
     // Store twid to docid mapping
     kh_foreach_value(si->wc->kh_twid2bmap, mbmap, {
-        store_id2mbmap(mbmap, si->twid2bmap_dbi, si->txn);
+        store_id2mbmap(si, mbmap, si->twid2bmap_dbi, si->txn);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_twid2bmap);
 
     // Store wid to docid mapping
     kh_foreach_value(si->wc->kh_wid2bmap, mbmap, {
-        store_id2mbmap(mbmap, si->wid2bmap_dbi, si->txn);
+        store_id2mbmap(si, mbmap, si->wid2bmap_dbi, si->txn);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_wid2bmap);
     // Store phrase to docid mapping
     kh_foreach_value(si->wc->kh_phrasebmap, mbmap, {
-        store_id2mbmap(mbmap, si->phrase_dbi, si->txn);
+        store_id2mbmap(si, mbmap, si->phrase_dbi, si->txn);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_phrasebmap);
 
@@ -448,8 +461,27 @@ static inline void index_number(struct sindex *si, int priority, double d) {
     mdb_put(si->txn, si->num_dbi[priority], &key, &data, 0);
 }
 
+/* Deindexes a double in the respective num_dbi */
+static inline void deindex_number(struct sindex *si, int priority, double d) {
+    uint32_t docid = si->wc->od.docid;
+    MDB_val key, data;
+    key.mv_size = sizeof(d);
+    key.mv_data = &d;
+    data.mv_size = sizeof(docid);
+    data.mv_data = &docid;
+    int rc = 0;
+    if ((rc = mdb_del(si->txn, si->num_dbi[priority], &key, &data) != 0)) {
+        M_ERR("Deindex num failed %d %f %u\n", rc, d, docid);
+    }
+}
+
 static inline void index_boolean(struct sindex *si, int priority, bool b) {
     wid2bmap_add(si->boolid2bmap_dbi, si->wc->kh_boolid2bmap, si->txn, 
+                         b, si->wc->od.docid, priority);
+}
+
+static inline void deindex_boolean(struct sindex *si, int priority, bool b) {
+    wid2bmap_remove(si->boolid2bmap_dbi, si->wc->kh_boolid2bmap, si->txn, 
                          b, si->wc->od.docid, priority);
 }
 
@@ -493,6 +525,17 @@ static inline void index_string_facet(struct sindex *si, const char *str, int pr
     kv_push(uint32_t, od->facet_data[priority], facet_id);
     // Update facetid -> bitmap of all documents with this facet id
     wid2bmap_add(si->facetid2bmap_dbi, si->wc->kh_facetid2bmap, si->txn, 
+                         facet_id, od->docid, priority);
+}
+
+static inline void deindex_string_facet(struct sindex *si, const char *str, int priority) {
+    // Facetid is a 32 bit farmhash of the string to be indexed
+    // TODO: Collisions ? Use different seed?
+    // TODO: Maintain a hashtable for a bulk write instead of hashing everytime wit farmhash?
+    struct doc_data *od = &si->wc->od;
+    uint32_t facet_id = farmhash32(str, strlen(str));
+    // Update facetid -> bitmap of all documents with this facet id
+    wid2bmap_remove(si->facetid2bmap_dbi, si->wc->kh_facetid2bmap, si->txn, 
                          facet_id, od->docid, priority);
 }
 
@@ -566,6 +609,56 @@ static void index_string(struct sindex *si, const char *str, int priority) {
     struct analyzer *a = get_default_analyzer();
     a->analyze_string_for_indexing(str, string_new_word_pos, &ad);
 }
+
+static void string_deindex_word_pos(word_pos_t *wp, void *data) {
+    struct analyzer_data *ad = data;
+    struct sindex *si = ad->si;
+    struct doc_data *od = &si->wc->od;
+    int p = ad->priority + 1;
+    int limit = wp->word.length >= LEVLIMIT ? LEVLIMIT : wp->word.length;
+
+    // Check if the word exists
+    uint32_t wid = dtrie_exists(si->trie, wp->word.chars, wp->word.length, od->twid);
+    if (wid == 0) {
+        M_ERR("De-index non-existing word ?");
+        return;
+    }
+
+    // Set the top-level wid to obj id mapping
+    for (int i = 0; i < limit; i++) {
+        wid2bmap_remove(si->twid2bmap_dbi, si->wc->kh_twid2bmap, si->txn, 
+                     od->twid[i], od->docid, 0);
+        wid2bmap_remove(si->twid2bmap_dbi, si->wc->kh_twid2bmap, si->txn, 
+                     od->twid[i], od->docid, p);
+    }
+
+    // Set the wid to obj id mapping
+    wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
+            wid, od->docid, 0);
+    wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
+            wid, od->docid, p);
+
+    // If we are not the first word, add the wid pair to phrase dbi
+    if (LIKELY(ad->prev_wid)) {
+        // TODO : Uncomment once you figure out how to store phrase for each priority
+        // and when you really need phrase search / split word search
+        //wid2bmap_remove(si->phrase_dbi, si->wc->kh_phrasebmap, si->txn,
+        //        ad->prev_wid, od->oid, wid);
+    }
+    ad->prev_wid = wid;
+}
+
+
+// TODO: better analyzer usage, configurable etc.,
+static void deindex_string(struct sindex *si, const char *str, int priority) {
+    struct analyzer_data ad;
+    ad.si = si;
+    ad.priority = priority;
+    ad.prev_wid = 0;
+    struct analyzer *a = get_default_analyzer();
+    a->analyze_string_for_indexing(str, string_deindex_word_pos, &ad);
+}
+
 
 
 /**
@@ -668,6 +761,105 @@ static void parse_index_document(struct sindex *si, struct schema *s, json_t *j)
     }
 }
 
+/**
+ * Parses and indexes an document.  This uses the index schema map and updates the 
+ * write cache with parsed information.
+ */
+static void parse_deindex_document(struct sindex *si, struct schema *s, const json_t *j) {
+    // Browse the schema and retrieve the fields from the json document based on 
+    // schema.  Ignore or throwaway fields which do not map to field type present
+    // in schema
+    while (s) {
+        switch (s->type) {
+            case F_STRING: {
+                json_t *js = json_object_get(j, s->fname);
+                if (!json_is_string(js)) break;
+                const char *str = json_string_value(js);
+                if (s->is_facet) {
+                    deindex_string_facet(si, str, s->f_priority);
+                }
+                if (s->is_indexed) {
+                    deindex_string(si, str, s->i_priority);
+                }
+            }
+            break;
+            case F_STRLIST: {
+                json_t *jarr = json_object_get(j, s->fname);
+                if (!json_is_array(jarr)) break;
+                size_t jid;
+                json_t *js;
+                json_array_foreach(jarr, jid, js) {
+                    const char *str = json_string_value(js);
+                    if (s->is_facet) {
+                        deindex_string_facet(si, str, s->f_priority);
+                    }
+                    if (s->is_indexed) {
+                        deindex_string(si, str, s->i_priority);
+                    }
+                }
+            }
+            break;
+            case F_NUMBER: {
+                json_t *jn = json_object_get(j, s->fname);
+                if (!json_is_number(jn)) break;
+                double d = json_number_value(jn);
+                // Index the number for sorting and filtering
+                if (s->is_indexed) {
+                    deindex_number(si, s->i_priority, d);
+                }
+            }
+            break;
+            case F_NUMLIST: {
+                json_t *jarr = json_object_get(j, s->fname);
+                if (!json_is_array(jarr)) break;
+                size_t jid;
+                json_t *jn;
+                json_array_foreach(jarr, jid, jn) {
+                    if (!json_is_number(jn)) continue;
+                    double d = json_number_value(jn);
+                    if (s->is_indexed) {
+                        deindex_number(si, s->i_priority, d);
+                    }
+                    // TODO: Decide on how to store arrays in docdata and index
+                    // Probably the same way we handle facets?
+                }
+            }
+            break;
+            case F_BOOLEAN: {
+                json_t *jb = json_object_get(j, s->fname);
+                if (!json_is_boolean(jb)) break;
+                // True and false are set in different bitmaps
+                deindex_boolean(si, s->i_priority, json_is_true(jb));
+            }
+            break;
+            // For objects, recursively call with inner objects in both schema
+            // and object
+            case F_OBJECT: {
+                json_t *jo = json_object_get(j, s->fname);
+                if (!json_is_object(jo)) break;
+                parse_deindex_document(si, s->child, jo);
+            }
+            break;
+            case F_OBJLIST: {
+                json_t *jarr = json_object_get(j, s->fname);
+                if (!json_is_array(jarr)) break;
+                size_t jid;
+                json_t *jo;
+                json_array_foreach(jarr, jid, jo) {
+                    if (json_is_object(jo)) {
+                        parse_deindex_document(si, s->child, jo);
+                    }
+                }
+            }
+            break;
+            default:
+                break;
+        }
+        s = s->next;
+    }
+}
+
+
 
 /* Entry point to parse and index a document, this assumes that 
  * the write cache is ready */
@@ -683,6 +875,46 @@ static void si_add_document(struct sindex *si, json_t *j) {
 
     // Store the parsed document and cleanup
     sindex_store_docdata(si);
+}
+
+static void si_remove_docdata(struct sindex *si) {
+    struct doc_data *od = &si->wc->od;
+    uint32_t docid = od->docid;
+
+    MDB_val key;
+    key.mv_size = sizeof(docid);
+    key.mv_data = &docid;
+    M_DBG("DELETING DOC %u", docid);
+
+    // Delete the objid specific data
+    if (mdb_del(si->txn, si->docid2wpos_dbi, &key, NULL) != 0) {
+        M_ERR("Failed to deallocate wpos data for oid %u", docid);
+    }
+ 
+    if (mdb_del(si->txn, si->docid2fndata_dbi, &key, NULL) != 0) {
+        M_ERR("Failed to deallocate fn data for oid %u", docid);
+    }
+
+    kv_destroy(od->kv_widpos);
+    kh_destroy(UNIQWID, od->kh_uniqwid);
+
+    // Clean facets
+    for (int i = 0; i<si->map->num_facets; i++) {
+        kv_destroy(od->facet_data[i]);
+    }
+}
+
+void si_delete_document(struct sindex *si, const json_t *j, uint32_t docid) {
+    si->wc->od.docid = docid;
+    // Setup per document data
+    sindex_docdata_init(si);
+
+    // Index schema is used to parse the document
+    // parse and deindex all the fields 
+    parse_deindex_document(si, si->map->index_schema->child, j);
+
+    // Remove object data
+    si_remove_docdata(si);
 }
 
 /* Adds one or more documents to the shard index.  This parses the input and updates
@@ -705,6 +937,14 @@ void sindex_add_documents(struct sindex *si, json_t *j) {
     } else {
         si_add_document(si, j);
     }
+    si_write_end(si);
+}
+
+void sindex_delete_document(struct sindex *si, const json_t *j, uint32_t docid) {
+    if (UNLIKELY((!j))) return;
+    if (UNLIKELY(json_is_null(j))) return;
+    si_write_start(si);
+    si_delete_document(si, j, docid);
     si_write_end(si);
 }
 
@@ -785,9 +1025,13 @@ void sindex_clear(struct sindex *si) {
     if ((rc = mdb_drop(si->txn, si->twid2widbmap_dbi, 0)) != 0) {
         M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
     }
-    for (int i = 0; i < si->map->num_numbers; i++) {
-        if ((rc = mdb_drop(si->txn, si->num_dbi[i], 0)) != 0) {
-            M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
+    // If we have a mapping and some numbers, clear respective
+    // num_dbi
+    if (si->map) {
+        for (int i = 0; i < si->map->num_numbers; i++) {
+            if ((rc = mdb_drop(si->txn, si->num_dbi[i], 0)) != 0) {
+                M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
+            }
         }
     }
     mdb_txn_commit(si->txn);

@@ -29,5 +29,7 @@ void sdata_add_documents(struct sdata *sd, json_t *j);
 void sdata_free(struct sdata *sd);
 void sdata_delete(struct sdata *sd);
 void sdata_clear(struct sdata *sd);
+char *sdata_get_document(const struct sdata *sd, const char *id);
+uint32_t sdata_delete_document(struct sdata *sd, const char *id);
 
 #endif

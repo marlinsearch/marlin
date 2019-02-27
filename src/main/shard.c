@@ -96,6 +96,22 @@ void shard_delete(struct shard *s) {
     rmdir(path);
 }
 
+/* Get the document with id from shard data */
+char *shard_get_document(const struct shard *s, const char *id) {
+    return sdata_get_document(s->sdata, id);
+}
+
+/* Get the document with id from shard data */
+bool shard_delete_document(struct shard *s, const json_t *j) {
+    const char *id = json_string_value(json_object_get(j, J_ID));
+    if (!id) return false;
+    uint32_t docid = sdata_delete_document(s->sdata, id);
+    if (docid) {
+        sindex_delete_document(s->sindex, j, docid);
+    }
+    return !!docid;
+}
+
 struct shard *shard_new(struct index *in, uint16_t shard_id) {
     struct shard *s = calloc(1, sizeof(struct shard));
     s->index = in;
