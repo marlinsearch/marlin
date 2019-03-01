@@ -122,7 +122,7 @@ static void store_facetid2str(struct sindex *si, uint32_t id, char *str) {
     key.mv_data = &id;
     int rc = mdb_put(si->txn, si->facetid2str_dbi, &key, &data, 0);
     if (rc != 0) {
-        M_ERR("MDB put failure facetid2str %d", rc);
+        M_ERR("MDB put failure facetid2str %s", mdb_strerror(rc));
         M_ERR("Len %u str %s", strlen(str), str);
     } 
 }

@@ -18,7 +18,7 @@
 #include "marlin.h"
 #include "mlog.h"
 
-#define NUM_THREADS     24
+#define NUM_THREADS     128
 #define NUM_LISTENERS   1
 #define MAX_CONNECTIONS 8192
 
@@ -74,12 +74,10 @@ static void on_sigterm(int signo) {
 static void setup_signal_handlers(void) {
     h2o_set_signal_handler(SIGTERM, on_sigterm);
     // TODO: Enable on release build.
-    // h2o_set_signal_handler(SIGINT, on_sigterm);
+    h2o_set_signal_handler(SIGINT, on_sigterm);
 #ifdef VALGRIND_TEST
     h2o_set_signal_handler(SIGINT, on_sigterm);
 #else
-    on_sigterm(0);
-    exit(0);
 #endif
     h2o_set_signal_handler(SIGPIPE, SIG_IGN);
 }
@@ -470,26 +468,28 @@ void *run_loop(void *_thread_index) {
         h2o_evloop_run(threads[thread_index].ctx.loop, INT32_MAX);
     }
 
-    //printf("Shutdown thread %u\n", thread_index);
-
     if (thread_index == 0) {
         M_ERR("received SIGTERM, gracefully shutting down\n");
-        notify_all_threads();
     }
 
     /* shutdown requested, unregister, close the listeners and notify the protocol handlers */
     for (i = 0; i != NUM_LISTENERS; ++i)
         h2o_socket_read_stop(listeners[i].sock);
+
     h2o_evloop_run(threads[thread_index].ctx.loop, 0);
+
     for (i = 0; i != NUM_LISTENERS; ++i) {
         h2o_socket_close(listeners[i].sock);
         listeners[i].sock = NULL;
     }
+
     h2o_context_request_shutdown(&threads[thread_index].ctx);
 
     /* wait until all the connection gets closed */
-    while (num_connections(0) != 0)
+    while (num_connections(0) != 0) {
+        printf("Connections close %d %lu\n", num_connections(0), thread_index);
         h2o_evloop_run(threads[thread_index].ctx.loop, INT32_MAX);
+    }
 
     if (thread_index == 0) {
         sleep(1);

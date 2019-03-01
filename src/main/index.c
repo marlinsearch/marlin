@@ -586,6 +586,10 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
     if (jq && json_is_object(jq)) {
         q = query_new(in);
         // TODO: read query cfg before reading the query string
+        //
+        // TODO: Parse query config overrides
+        //
+        // TODO: Parse filters
 
         const char *qstr = json_string_value(json_object_get(jq, J_QUERY));
         q->text = strdup(qstr);
@@ -648,6 +652,8 @@ const struct api_path apipaths[] = {
     {"GET", URL_MULTI, KA_BROWSE, index_get_document_callback},
     // delete document
     {"DELETE", URL_MULTI, KA_DELETE, index_delete_document_callback},
+    // replace object
+//    {"PUT", URL_MULTI, KA_UPDATE, index_replace_document_callback},
     // Done here
     {"", "", KA_NONE, NULL}
     /*
@@ -655,27 +661,14 @@ const struct api_path apipaths[] = {
     {"GET", NULL, KA_BROWSE, index_browse_callback},
     // Post data
     {"POST", NULL, KA_ADD, index_data_callback},
-    // Get Settings
-    {"GET", URL_SETTINGS, KA_G_CONFIG, index_get_settings_callback},
-    // Set Settings
-    {"POST", URL_SETTINGS, KA_S_CONFIG, index_save_settings_callback},
     // Reindex
     {"POST", URL_REINDEX, KA_S_CONFIG, index_reindex_callback},
-    // Mapping
-    {"GET", URL_MAPPING, KA_G_CONFIG, index_mapping_callback},
     // Index Mapping
     {"GET", URL_INDEX_MAPPING, KA_G_CONFIG, index_index_mapping_callback},
     // Query get
     // {"GET", URL_QUERY, KA_QUERY, index_query_callback},
-    // Query post
-    {"POST", URL_QUERY, KA_QUERY, index_json_query_callback},
-    // Clear datastore
-    {"POST", URL_CLEAR, KA_DELETE, index_clear_callback},
     // Bulk
     {"POST", URL_BULK, KA_DELETE|KA_ADD|KA_UPDATE, index_bulk_callback},
-    // Object manipulation
-    // get object
-    {"GET", URL_MULTI, KA_BROWSE, index_get_object_callback},
     // replace object
     {"PUT", URL_MULTI, KA_UPDATE, index_replace_object_callback},
     // update object

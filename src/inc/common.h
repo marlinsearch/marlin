@@ -14,7 +14,7 @@
 #define MDB_ENV_SIZE        655360000
 #define MAPSIZE             655360000
 #else
-#define MDB_ENV_SIZE        6553600000
+#define MDB_ENV_SIZE        65536000000
 #define MAPSIZE             PSIZE * PSIZE * 100
 #endif
 

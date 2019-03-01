@@ -33,6 +33,7 @@ void mbmap_add(struct mbmap *b, uint32_t item, MDB_txn *txn, MDB_dbi dbi) {
     uint16_t id = highbits(item);
     uint16_t val = lowbits(item);
     int pos = binary_search(b, id);
+    int rc = 0;
     if (pos >= 0) {
         // If container has not been loaded, now is a good time to load it
         if (!b->c[pos].cont.buffer) {
@@ -40,11 +41,11 @@ void mbmap_add(struct mbmap *b, uint32_t item, MDB_txn *txn, MDB_dbi dbi) {
             MDB_val key, data;
             key.mv_size = sizeof(bid);
             key.mv_data = &bid;
-            if (mdb_get(txn, dbi, &key, &data) == 0) {
+            if ((rc = mdb_get(txn, dbi, &key, &data)) == 0) {
                 b->c[pos].cont.buffer = malloc(data.mv_size);
                 memcpy(b->c[pos].cont.buffer, data.mv_data, data.mv_size);
             } else {
-                M_ERR("Failed to load mbmap container bid %"PRIu64" id %u cid %u ", bid, b->id, b->c[pos].id);
+                M_ERR("Failed to load mbmap container bid %"PRIu64" id %u cid %u ", bid, b->id, b->c[pos].id, mdb_strerror(rc));
                 return;
             }
         }
@@ -173,7 +174,7 @@ bool mbmap_save(struct mbmap *b, MDB_txn *txn, MDB_dbi dbi) {
         data.mv_size = sizeof(uint16_t) * (b->num_c + 1);
         int rc = mdb_put(txn, dbi, &key, &data, MDB_RESERVE);
         if (rc != 0) {
-            M_ERR("MDB reserve failure mbmap save %d", rc);
+            M_ERR("MDB reserve failure mbmap save %s", mdb_strerror(rc));
         } else {
             uint16_t *buf = data.mv_data;
             *buf = b->num_c;
@@ -195,7 +196,7 @@ bool mbmap_save(struct mbmap *b, MDB_txn *txn, MDB_dbi dbi) {
             data.mv_data = b->c[i].cont.buffer;
             int rc = mdb_put(txn, dbi, &key, &data, 0);
             if (rc != 0) {
-                M_ERR("MDB failure mbmap save %d", rc);
+                M_ERR("MDB failure mbmap save %s", mdb_strerror(rc));
             }
         }
     }
@@ -222,15 +223,15 @@ struct bmap *mbmap_load_bmap(MDB_txn *txn, MDB_dbi dbi, uint64_t id) {
             uint64_t bcid = id + cid + 1;
             key.mv_data = &bcid;
             MDB_val data2;
-            if (mdb_get(txn, dbi, &key, &data2) == 0) {
+            if ((rc = mdb_get(txn, dbi, &key, &data2)) == 0) {
                 b->c[i].buffer = data2.mv_data;
             } else {
-                M_ERR("Could not load buffer data dbi %d bcid %"PRIu64" id %"PRIu64" cid %u numc %u", dbi, bcid, id, cid, b->num_c);
+                M_ERR("Could not load buffer data dbi %d bcid %"PRIu64" id %"PRIu64" cid %u numc %u %s", dbi, bcid, id, cid, b->num_c, mdb_strerror(rc));
             }
         }
         return b;
     } else {
-        //M_INFO("Failed to load mbmap %d\n", rc);
+        // M_INFO("Failed to load mbmap %s\n", mdb_strerror(rc));
     }
     return NULL;
 }
