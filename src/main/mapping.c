@@ -28,6 +28,11 @@ static F_TYPE typestr_to_type(const char *ts) {
     return 0;
 }
 
+const char * type_to_str(F_TYPE type) {
+    if (type < F_MAX) return type2str[type];
+    return "";
+}
+
 static struct schema *find_field_under_schema(struct schema *sa, const char *name){
     struct schema *s = sa->child;
     while (s) {
@@ -155,7 +160,7 @@ static void json_to_schema(json_t *j, struct schema *rs) {
 }
 
 
-static struct schema *schema_find_field(struct schema *s, const char *name) {
+struct schema *schema_find_field(struct schema *s, const char *name) {
     M_DBG("FindField %s", name);
     if (!s) return NULL;
     struct schema *c = s;

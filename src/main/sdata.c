@@ -313,7 +313,7 @@ struct sdata *sdata_new(struct shard *shard) {
     }
 
     mdb_env_set_maxdbs(s->env, 3);
-    mdb_env_open(s->env, path, 0, 0664);
+    mdb_env_open(s->env, path, MDB_NORDAHEAD, 0664);
     mdb_txn_begin(s->env, NULL, 0, &s->txn);
     if (mdb_dbi_open(s->txn, DBI_USEDFREE, MDB_CREATE|MDB_INTEGERKEY, &s->usedfree_dbi) != 0) {
         M_ERR("Failed to load %s dbi", DBI_USEDFREE);

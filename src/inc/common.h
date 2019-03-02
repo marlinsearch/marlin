@@ -94,6 +94,7 @@
 
 // Query attributes
 #define J_QUERY         "q"
+#define J_FILTER        "filter"
 
 // Query response attributes
 #define J_R_TOTALHITS     "totalHits"

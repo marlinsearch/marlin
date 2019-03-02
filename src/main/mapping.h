@@ -64,5 +64,7 @@ bool mapping_apply_config(struct mapping *m);
 void mapping_free(struct mapping *m);
 void mapping_delete(struct mapping *m);
 char *mapping_to_json_str(const struct mapping *m);
+const char * type_to_str(F_TYPE type);
+struct schema *schema_find_field(struct schema *s, const char *name);
 
 #endif

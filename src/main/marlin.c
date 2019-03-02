@@ -10,6 +10,7 @@
 #include "url.h"
 #include "api.h"
 #include "analyzer.h"
+#include "filter.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 //#define SINGLE_THREAD_SEARCH_POOL 1
@@ -265,6 +266,7 @@ void init_marlin(void) {
 
     // Initializations
     init_analyzers();
+    init_filters();
 
     // Setup applications, creating a default one if required
     kv_init(marlin->apps);

@@ -25,16 +25,6 @@ typedef enum jobtype {
     JOB_BULK,
 } JOB_TYPE;
 
-/* An index job, which can be of one of the above jobtypes
- * based on the jobtype some of the fields may not be used */
-struct in_job {
-    struct index *index;
-    json_t *j;
-    json_t *j2;
-    JOB_TYPE type;
-    uint32_t id;
-};
-
 
 /* Configuration information for an Index */
 struct index_cfg {
@@ -71,9 +61,22 @@ struct index {
     uint16_t job_count;
 };
 
+/* An index job, which can be of one of the above jobtypes
+ * based on the jobtype some of the fields may not be used */
+struct in_job {
+    struct index *index;
+    json_t *j;
+    json_t *j2;
+    JOB_TYPE type;
+    uint32_t id;
+};
+
+
+
 struct index *index_new(const char *name, struct app *a, int num_shards);
 void index_free(struct index *in);
 void index_clear(struct index *in);
 void index_delete(struct index *in);
+struct schema *get_field_schema(struct index *in, const char *key);
 
 #endif

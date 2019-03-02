@@ -1059,7 +1059,7 @@ struct sindex *sindex_new(struct shard *shard) {
         M_ERR("Error setting mapsize on [%s/%s] %d", shard->index->app->name, shard->index->name, rc);
     }
     mdb_env_set_maxdbs(si->env, 64);
-    mdb_env_open(si->env, path, MDB_NOSYNC, 0664);
+    mdb_env_open(si->env, path, MDB_NORDAHEAD|MDB_NOSYNC, 0664);
     mdb_txn_begin(si->env, NULL, 0, &si->txn);
 
     // Open all necessary dbis here

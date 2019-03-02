@@ -10,6 +10,7 @@
 #include "analyzer.h"
 #include "query.h"
 #include "debug.h"
+#include "filter.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 #define USE_INDEX_THREAD_POOL 1
@@ -590,6 +591,11 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
         // TODO: Parse query config overrides
         //
         // TODO: Parse filters
+        json_t *jf = json_object_get(jq, J_FILTER);
+        // We have a filter, let us parse it
+        if (jf && !json_is_null(jf)) {
+            q->filter = parse_filter(in, jf);
+        }
 
         const char *qstr = json_string_value(json_object_get(jq, J_QUERY));
         q->text = strdup(qstr);
@@ -628,6 +634,13 @@ static void index_load_settings(struct index *in) {
         index_load_json_settings(in, json);
         json_decref(json);
     }
+}
+
+struct schema *get_field_schema(struct index *in, const char *key) {
+    if (UNLIKELY(!in->mapping) && !in->mapping->index_schema) {
+        return NULL;
+    }
+    return schema_find_field(in->mapping->index_schema, key);
 }
 
 const struct api_path apipaths[] = {
