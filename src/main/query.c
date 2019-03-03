@@ -2,6 +2,7 @@
 #include "squery.h"
 #include "marlin.h"
 #include "utils.h"
+#include "filter.h"
 
 static void term_free(term_t *t) {
     wordfree(t->word);
@@ -201,6 +202,10 @@ void query_free(struct query *q) {
         term_free(kv_A(q->terms, i));
     }
     kv_destroy(q->terms);
+
+    if (q->filter) {
+        filter_free(q->filter);
+    }
 
     free(q);
 }

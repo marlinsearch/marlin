@@ -146,7 +146,17 @@ static struct filter *parse_schema_key_json(const struct schema *s, const char *
             filter_free(f);
             f = fa;
         }
+    } else {
+        if (json_is_array(json)) {
+            f->type = F_ERROR;
+            snprintf(f->error, sizeof(f->error), "Array not expected for operator %s field %s", key, s->fname);
+        }
+        if (json_is_null(json)) {
+            f->type = F_ERROR;
+            snprintf(f->error, sizeof(f->error), "NULL not expected for operator %s field %s", key, s->fname);
+        }
     }
+
     return f;
 }
 
@@ -253,7 +263,7 @@ static struct filter *parse_schema_json(const struct schema *s, json_t *json) {
 static struct filter *parse_key_json(struct index *in, const char *key, json_t *json) {
     struct filter *f = NULL;
     const struct schema *s = get_field_schema(in, key);
-    M_DBG("Key %s, s %s\n", key, s->pname);
+    M_INFO("Key %s, s %s\n", key, s->fname);
     if (s) {
         return parse_schema_json(s, json);
     } 
@@ -329,15 +339,15 @@ void dump_filter(struct filter *f, int indent) {
     for (int i=0; i<indent; i++) {
         strcat(ind, "    ");
     }
-    M_INFO("%sType      : %s\n", ind, filter_str[f->type]);
+    M_INFO("%sType      : %s", ind, filter_str[f->type]);
     if (f->type == F_ERROR) {
-        M_DBG("%sError     : %s\n", ind, f->error);
+        M_INFO("%sError     : %s", ind, f->error);
     }
-    M_INFO("%sFieldType : %s\n", ind, type_to_str(f->field_type));
-    M_INFO("%sField     : %s\n", ind, f->s?f->s->fname:"");
-    M_INFO("%sStrVal     : %s\n", ind, (f->strval)?f->strval:"");
-    M_INFO("%sNumVal     : %f\n", ind, f->numval);
-    M_INFO("%sBmap       : %d\n", ind, f->fr_bmap?1:0);
+    M_INFO("%sFieldType : %s", ind, type_to_str(f->field_type));
+    M_INFO("%sField     : %s", ind, f->s?f->s->fname:"");
+    M_INFO("%sStrVal     : %s", ind, (f->strval)?f->strval:"");
+    M_INFO("%sNumVal     : %f", ind, f->numval);
+    M_INFO("%sBmap       : %d", ind, f->fr_bmap?1:0);
     M_INFO("\n");
 
     for (int i = 0; i < kv_size(f->children); i++) {

@@ -20,7 +20,7 @@ Configure the index
 Load some data
     ${testjson}  Input  ${CURDIR}/../test.json
     Set Headers  ${appheader}
-    POST         /1/indexes/testindex  ${testjson}[data]
+    POST         /1/indexes/testindex  ${testjson}[data][0:1000]
     Integer     response status     200
     Wait Until Keyword Succeeds	100x	10ms   No Jobs
 
@@ -29,7 +29,7 @@ Test an empty query
     Set Headers  ${appheader}
     POST         /1/indexes/testindex/query  {"q": ""}
     Integer     response status     200
-    Integer     $.totalHits         ${testjson}[count]
+    Integer     $.totalHits         1000
 
 Delete the index
     Set Headers  ${appheader}

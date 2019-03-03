@@ -538,6 +538,12 @@ send_response:
     return resp;
 }
 
+static char *failure_message(const char *msg) {
+    char *tmp = malloc(PATH_MAX);
+    snprintf(tmp, PATH_MAX, "{\"success\": false, \"message\": \"%s\"}", msg);
+    return tmp;
+}
+
 /* Deletes a single document from the index by the document id */
 static char *index_delete_document_callback(h2o_req_t *req, void *data) {
     struct index *in = data;
@@ -593,13 +599,23 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
         // TODO: Parse filters
         json_t *jf = json_object_get(jq, J_FILTER);
         // We have a filter, let us parse it
-        if (jf && !json_is_null(jf)) {
+        if (jf && !json_is_null(jf) && json_object_size(jf)) {
             q->filter = parse_filter(in, jf);
+            if (!q->filter) {
+                req->res.status = 400;
+                response = failure_message("Query filter json parsing error");
+                goto send_response;
+            }
+            if (q->filter->type == F_ERROR) {
+                req->res.status = 400;
+                response = failure_message(q->filter->error);
+                goto send_response;
+            }
         }
 
         const char *qstr = json_string_value(json_object_get(jq, J_QUERY));
-        q->text = strdup(qstr);
         if (qstr) {
+            q->text = strdup(qstr);
             struct analyzer *a = get_default_analyzer();
             a->analyze_string_for_search(qstr, query_string_word_cb, q);
         }
@@ -613,6 +629,7 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
         return strdup(J_FAILURE);
     }
 
+send_response:
     if (q) {
         query_free(q);
     }
@@ -638,9 +655,10 @@ static void index_load_settings(struct index *in) {
 
 struct schema *get_field_schema(struct index *in, const char *key) {
     if (UNLIKELY(!in->mapping) && !in->mapping->index_schema) {
+        M_ERR("Mapping not set");
         return NULL;
     }
-    return schema_find_field(in->mapping->index_schema, key);
+    return schema_find_field(in->mapping->index_schema->child, key);
 }
 
 const struct api_path apipaths[] = {
