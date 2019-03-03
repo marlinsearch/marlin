@@ -94,6 +94,7 @@ static struct filter *parse_schema_array(const struct schema *s, json_t *json, F
         } else if (c->type == F_ERROR) {
             f->type = F_ERROR;
             strcpy(f->error, c->error);
+            filter_free(c);
             break;
         }
         kv_push(struct filter *, f->children, c);
