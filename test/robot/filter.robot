@@ -95,6 +95,34 @@ Test invalid string eq filter num
     POST         /1/indexes/testindex/query  {"filter": {"facet": {"$gt": "test"}}}
     Integer     response status     400
 
+Test invalid string operator
+    POST         /1/indexes/testindex/query  {"filter": {"facet": {"$mt": "test"}}}
+    Integer     response status     400
+
+Test invalid bool for non bool field
+    POST         /1/indexes/testindex/query  {"filter": {"facet": {"$eq": false}}}
+    Integer     response status     400
+
+Test valid in string operator
+    POST         /1/indexes/testindex/query  {"filter": {"facet": {"$in": ["test", "wors", "news"]}}}
+    Integer     response status     200
+
+Test invalid nin string operator
+    POST         /1/indexes/testindex/query  {"filter": {"facet": {"$nin": ["test", 5, true]}}}
+    Integer     response status     400
+
+Test multi num filter
+    POST         /1/indexes/testindex/query  {"filter": {"num": [{"$gt": 5}, {"$lt" : 3}]}}
+    Integer     response status     200
+
+Test multi num filter 2
+    POST         /1/indexes/testindex/query  {"filter": {"num": {"$gt": 5, "$lt" : 3}}}
+    Integer     response status     200
+
+Test complex num filter
+    POST         /1/indexes/testindex/query  {"filter": {"num": {"$or": [{"$gt": 5}, {"$lt" : 3}, {"$eq": 6}]}}}
+    Integer     response status     200
+
 
 Delete the index
     Set Headers  ${appheader}

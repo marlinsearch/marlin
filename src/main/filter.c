@@ -37,10 +37,12 @@ static void filter_children_free(struct filter *f) {
         filter_free(kv_A(f->children, i));
     }
     kv_destroy(f->children);
+    kv_init(f->children);
 }
 
 void filter_free(struct filter *f) {
     filter_children_free(f);
+    kv_destroy(f->children);
     free(f);
 }
 
@@ -88,6 +90,7 @@ static struct filter *parse_schema_array(const struct schema *s, json_t *json, F
         if (c == NULL) {
             f->type = F_ERROR;
             snprintf(f->error, sizeof(f->error), "Could not parse field %s", s->fname);
+            break;
         } else if (c->type == F_ERROR) {
             f->type = F_ERROR;
             strcpy(f->error, c->error);
