@@ -267,16 +267,48 @@ static struct filter *parse_schema_json(const struct schema *s, json_t *json) {
 static struct filter *parse_key_json(struct index *in, const char *key, json_t *json) {
     struct filter *f = NULL;
     const struct schema *s = get_field_schema(in, key);
-    M_INFO("Key %s, s %s\n", key, s->fname);
+    // Check if a field exists for this key
     if (s) {
+        M_INFO("Key %s, s %s\n", key, s->fname);
         return parse_schema_json(s, json);
-    } 
-    // TODO: Handle filter: {$and: [{$or : [{'a':1},{'b':2}]},{$or : [{'a':2},{'b':3}]}]}
-    else if (strcmp(key, "$or")  == 0) {
-    } else if (strcmp(key, "$and") == 0) {
-    } else if (strcmp(key, "$nin") == 0) {
     }
-    return (f)?f: filter_error("Invalid field or operator", key);
+    // Handle filter: {$and: [{$or : [{'a':1},{'b':2}]},{$or : 
+    // [{'a':2},{'b':3}]}]}
+    // See if it is a filter operator
+    FILTER_TYPE ftype = get_operator_type(key);
+    if (ftype == F_ERROR) {
+        return filter_error("Invalid field or operator", key);
+    }
+
+    if (!((ftype == F_OR) || (ftype == F_NIN) || (ftype == F_AND))) {
+        return filter_error("Invalid field or operator", key);
+    }
+
+    if (!json_is_array(json)) {
+        return filter_error("Array expected for operator", key);
+    }
+
+    f = filter_new();
+    f->type = ftype;
+
+    size_t index;
+    json_t *value;
+    json_array_foreach(json, index, value) {
+        // Get the result of parsing each filter
+        struct filter *c = parse_filter(in, value);
+        if (c == NULL) {
+            f->type = F_ERROR;
+            snprintf(f->error, sizeof(f->error), "Could not parse filter");
+            break;
+        } else if (c->type == F_ERROR) {
+            f->type = F_ERROR;
+            strcpy(f->error, c->error);
+            filter_free(c);
+            break;
+        }
+        kv_push(struct filter *, f->children, c);
+    }
+    return f;
 }
 
 

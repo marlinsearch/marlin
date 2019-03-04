@@ -123,6 +123,17 @@ Test complex num filter
     POST         /1/indexes/testindex/query  {"filter": {"num": {"$or": [{"$gt": 5}, {"$lt" : 3}, {"$eq": 6}]}}}
     Integer     response status     200
 
+Test operator filter
+    POST         /1/indexes/testindex/query  {"filter": {"$or": [{"facet": "test"}, {"$nin": [{"num": 5}, {"num": 4}]}]}}
+    Integer     response status     200
+
+Test invalid operator filter
+    POST         /1/indexes/testindex/query  {"filter": {"$gt": [{"facet": "test"}, {"$nin": [{"num": 5}, {"num": 4}]}]}}
+    Integer     response status     400
+
+Test invalid operator filter not array
+    POST         /1/indexes/testindex/query  {"filter": {"$or": {"facet": "test"}}}
+    Integer     response status     400
 
 Delete the index
     Set Headers  ${appheader}
