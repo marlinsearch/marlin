@@ -263,7 +263,7 @@ static inline uint8_t *write_vint(uint8_t *buf, const int vi) {
     return buf;
 }
 
-static inline uint8_t *read_vint(uint8_t *buf, int *value) {
+uint8_t *read_vint(uint8_t *buf, int *value) {
     uint8_t b = *buf;
     buf++;
     int i = b & 0x7F;
@@ -559,6 +559,15 @@ static void string_new_word_pos(word_pos_t *wp, void *data) {
             wid2bmap_add(si->twid2widbmap_dbi, si->wc->kh_twid2widbmap, si->txn, 
                          od->twid[i], wid, p);
         }
+#ifdef TRACK_WIDS
+        MDB_val key, data;
+        data.mv_size = (wp->word.length) * sizeof(chr_t);
+        data.mv_data = wp->word.chars;
+
+        key.mv_size = sizeof(uint32_t);
+        key.mv_data = &wid;
+        mdb_put(si->txn, si->wid2chr_dbi, &key, &data, 0);
+#endif
     }
 
     // Set the top-level wid to obj id mapping
@@ -1072,6 +1081,9 @@ struct sindex *sindex_new(struct shard *shard) {
     mdb_dbi_open(si->txn, DBI_DOCID2FNDATA, MDB_CREATE|MDB_INTEGERKEY, &si->docid2fndata_dbi);
     mdb_dbi_open(si->txn, DBI_DOCID2WPOS, MDB_CREATE|MDB_INTEGERKEY, &si->docid2wpos_dbi);
     mdb_dbi_open(si->txn, DBI_PHRASE, MDB_CREATE|MDB_INTEGERKEY, &si->phrase_dbi);
+#ifdef TRACK_WIDS
+    mdb_dbi_open(si->txn, "wid2chrdbi", MDB_CREATE|MDB_INTEGERKEY, &si->wid2chr_dbi);
+#endif
 
     strcat(path, "/");
     strcat(path, DTRIE_FILE);

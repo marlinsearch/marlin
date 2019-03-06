@@ -625,18 +625,20 @@ static void add_wordid_to_result(termresult_t *tr, uint32_t wid, int distance) {
 
 static void node_walk(struct dtrie *dt, struct dnode *d, termresult_t *tr, int distance) {
     // See if we have a twid and use that if it exists
-    tr->twid = get_twid(d);
-    if (!tr->twid) {
+    // tr->twid = get_twid(d);
+    /*if (!tr->twid)*/ 
+    {
         // Add wid if any in the current node
         uint32_t wid = get_wid(d);
         if (wid) {
+            //printf("PWORDID %u\n", wid);
             add_wordid_to_result(tr, wid, distance);
         }
         for (int i = 0; i < d->num_child; i++) {
             struct dnode *dc = get_node_from_nodeid(dt, &d->child[i].nid);
             node_walk(dt, dc, tr, distance);
         }
-    }
+    } 
 }
 
 /* Looksup toplevel word id, only to be used when word len is <= LEVLIMIT
@@ -723,6 +725,7 @@ static void node_lev(struct lev_data *ld, struct dnode *d, int *prev_row, int *p
         } else  {
             uint32_t wid = get_wid(d);
             if (wid) {
+                //printf("PWORDID %u\n", wid);
                 add_wordid_to_result(ld->tr, wid, dist);
             }
         }
