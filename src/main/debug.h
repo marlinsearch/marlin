@@ -5,6 +5,7 @@
 #include "dtrie.h"
 
 //#define DUMP_ENABLE 1
+#define TRACE_QUERY 1
 
 #ifdef DUMP_ENABLE
 void worddump(const word_t *a);
@@ -17,5 +18,12 @@ void dump_bmap(struct bmap *b);
 #define dump_termresult(tr) ;
 #define dump_bmap(b) ;
 #endif
+
+#ifdef TRACE_QUERY
+void trace_query(const char *msg, struct timeval *start);
+#else
+#define trace_query(msg, start) ;
+#endif
+
 
 #endif

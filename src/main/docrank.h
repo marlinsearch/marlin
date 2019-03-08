@@ -1,17 +1,17 @@
 #ifndef __DOCRANK_H_
 #define __DOCRANK_H_
 #include <stdint.h>
-#include "squery.h"
 
 typedef struct docrank {
     double compare;
     uint32_t docid;
-    uint16_t attributes;
+    uint32_t distance;
+    uint16_t position;
     uint16_t proximity;
     uint8_t typos;
     uint8_t exact;
     uint8_t field;
-    uint8_t pad;
+    uint8_t shard_id;
 } docrank_t;
 
 struct rank_iter {

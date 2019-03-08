@@ -1,4 +1,5 @@
 #include "docrank.h"
+#include "squery.h"
 
 static inline wid_info_t *binary_search(wid_info_t *in, uint32_t wid, int numwid) {
     int low = 0, high = numwid-1, middle;
@@ -37,8 +38,7 @@ static inline bool lookup_wid(uint8_t *head, uint32_t wid, int *priority, int *p
     return false;
 }
 
-/*
-static inline void rank_single_term(struct docrank *rank, struct squery *sq, uint8_t *dpos) {
+static inline void rank_single_term2(struct docrank *rank, struct squery *sq, uint8_t *dpos) {
     khash_t(WID2TYPOS) *allwordids = sq->sqres->termdata[0].tresult->wordids;
     uint32_t wid;
     int typos;
@@ -51,16 +51,13 @@ static inline void rank_single_term(struct docrank *rank, struct squery *sq, uin
             }
             if (priority < rank->field) {
                 rank->field = priority;
-                rank->attributes = position;
+                rank->position = position;
             }
-            //printf("found %d %d\n", rank->field, rank->attributes);
             return;
-            printf("hello\n");
         }
     });
 
 }
-*/
 
 static inline int word_dist(khash_t(WID2TYPOS) *wordids, uint32_t wid) {
     khiter_t k = kh_get(WID2TYPOS, wordids, wid);
@@ -91,6 +88,16 @@ static inline void rank_single_term(struct docrank *rank, struct squery *sq, uin
     uint8_t *pos = dpos + 2;
     wid_info_t *info = (wid_info_t *)pos;
     int priority, position;
+
+    // Check if we have an exact word match, set rank & typos accordingly
+    if (sq->sqres->exact_docid_map[0]) {
+        if (bmap_exists(sq->sqres->exact_docid_map[0], rank->docid)) {
+            rank->exact = 1;
+            rank->typos = 0;
+        }
+    }
+
+    // Iterate over all words and check which word matches and set rank fields
     for (int i = 0; i < numwid; i++) {
         int dist = word_dist(allwordids, info[i].wid);
         if (dist < rank->typos) {
@@ -100,8 +107,9 @@ static inline void rank_single_term(struct docrank *rank, struct squery *sq, uin
             get_priority_position(&info[i], dpos, &priority, &position);
             if (priority < rank->field) {
                 rank->field = priority;
-                rank->attributes = position;
+                rank->position = position;
             }
+            // TODO: is this ok ???
             if (priority == 0) break;
         }
     }
@@ -111,7 +119,7 @@ static inline void rank_single_term(struct docrank *rank, struct squery *sq, uin
 static inline void calculate_rank(struct docrank *rank, struct squery *sq, uint8_t *dpos) {
     int num_terms = kv_size(sq->q->terms);
     if (num_terms == 0) {
-        rank->attributes = 0;
+        rank->position = 0;
         rank->proximity = 0;
         rank->exact = 0;
         rank->field = 0;
@@ -121,8 +129,9 @@ static inline void calculate_rank(struct docrank *rank, struct squery *sq, uint8
     if (num_terms == 1) {
         rank->proximity = 0;
         rank->exact = 0;
-        rank->field = 0xff;
-        rank->attributes = 0xff;
+        rank->field = 0xFF;
+        rank->typos = 0xFF;
+        rank->position = 0xFFFF;
         rank_single_term(rank, sq, dpos);
     }
 }
@@ -136,9 +145,9 @@ static inline void perform_doc_rank(struct squery *sq, struct docrank *rank) {
     if ((rc = mdb_get(sq->txn, si->docid2wpos_dbi, &key, &mdata)) != 0) {
         //S_ERR("Failed to get mdb data for obj data %llu %d %d", tdata->ranks[i].objid, rc, i);
         // Push this result down below
-        rank->typos = 255;
-        rank->attributes = 255;
-        rank->proximity = 255;
+        rank->typos = 0xFF;
+        rank->position = 0xFFFF;
+        rank->proximity = 0xFFFF;
         return;
     }
 

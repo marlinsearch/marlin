@@ -523,3 +523,12 @@ uint16_t cont_get_first(const struct cont *c) {
 }
 
 
+bool cont_exists(const struct cont *c, uint16_t item) {
+    uint32_t card = cont_cardinality(c);
+    if (!card) return false;
+    if (card <= CUTOFF) {
+        return exists_array(c,item);
+    } else {
+        return exists_bitset(c,item);
+    }
+}

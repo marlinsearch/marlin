@@ -180,6 +180,26 @@ void sdata_add_documents(struct sdata *sd, json_t *j) {
     end_document_update(sd);
 }
 
+char *sdata_get_document_byid(const struct sdata *sd, uint32_t docid) {
+    MDB_txn *txn;
+    mdb_txn_begin(sd->env, NULL, MDB_RDONLY, &txn);
+    char *resp = NULL;
+    int rc;
+    MDB_val key, data;
+    key.mv_data = &docid;
+    key.mv_size = sizeof(uint32_t);
+    if ((rc = mdb_get(txn, sd->docid2json_dbi, &key, &data)) == 0) {
+            Bytef *jd = data.mv_data;
+            size_t slen = *(uint32_t *)data.mv_data;
+            resp = malloc(slen + 1);
+            uncompress((Bytef *)resp, &slen, &jd[4], data.mv_size);
+    } else {
+            // M_ERR("Failed to get json %s\n", mdb_strerror(rc));
+    }
+    mdb_txn_abort(txn);
+    return resp;
+}
+
 char *sdata_get_document(const struct sdata *sd, const char *id) {
     MDB_txn *txn;
     mdb_txn_begin(sd->env, NULL, MDB_RDONLY, &txn);

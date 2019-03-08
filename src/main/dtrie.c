@@ -773,6 +773,18 @@ static void lookup_typo(struct dtrie *dt, term_t *t, termresult_t *tr) {
     UNLOCK(&dt->trie_lock);
 }
 
+uint32_t dtrie_lookup_exact(struct dtrie *dt, word_t *word) {
+    uint32_t ret = 0;
+    RDLOCK(&dt->trie_lock);
+    struct dnode *d = lookup_word_node(dt, word->chars, word->length);
+    if (d) {
+        // NOTE: get_wid can return 0 if we do not have an exact match
+        ret = get_wid(d);
+    }
+    UNLOCK(&dt->trie_lock);
+    return ret;
+}
+
 struct termresult *dtrie_lookup_term(struct dtrie *dt, term_t *t) {
     struct termresult *tr = calloc(1, sizeof(struct termresult));
     tr->wordids = kh_init(WID2TYPOS);
