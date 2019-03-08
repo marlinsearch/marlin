@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "debug.h"
+#include "utils.h"
 
 #ifdef DUMP_ENABLE
 void worddump(const word_t *a) {
@@ -54,5 +55,12 @@ void dump_bmap(struct bmap *b) {
     uint32_t x = 0;
     bmap_iterate(b, bmap_iter, &x);
     printf("\n");
+}
+#endif
+#ifdef TRACE_QUERY
+void trace_query(const char *msg, struct timeval *start) {
+    struct timeval stop;
+    gettimeofday(&stop, NULL);
+    printf("%s %f\n", msg, timedifference_msec(*start, stop));
 }
 #endif

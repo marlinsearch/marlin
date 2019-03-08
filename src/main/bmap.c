@@ -11,7 +11,7 @@ static inline uint16_t lowbits(uint32_t i) {
     return (i & 0xFFFF);
 }
 
-static int binary_search(struct bmap *b, uint16_t id) {
+static int binary_search(const struct bmap *b, uint16_t id) {
     int low = 0, high = b->num_c-1, middle;
     // Usually we add to the end, handle that
     if (b->num_c > 0) {
@@ -517,4 +517,10 @@ void bmap_load(struct bmap *b, const uint16_t *buf) {
     }
 }
 
-
+bool bmap_exists(const struct bmap *b, uint32_t item) {
+    int pos = binary_search(b, highbits(item));
+    if (pos >= 0) {
+        return cont_exists(&b->c[pos], lowbits(item));
+    }
+    return false;
+}

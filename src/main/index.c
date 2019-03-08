@@ -338,6 +338,49 @@ static int cfg_set_list_fields(void *data, json_t *ja) {
     return changed;
 }
 
+static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg) {
+    const char *key;
+    json_t *value;
+
+    // TODO: Validate settings are within limits.. eg., maxhits cannot be more than 1000
+    // hitsperpage cannot be more than maxhits etc.,
+    json_object_foreach(j, key, value) {
+        if (strcmp(J_S_HITS_PER_PAGE, key) == 0) {
+            qcfg->hits_per_page = json_integer_value(value);
+        }
+        if (strcmp(J_S_MAX_HITS, key) == 0) {
+            qcfg->max_hits = json_integer_value(value);
+        }
+        if (strcmp(J_S_MAX_FACET_RESULTS, key) == 0) {
+            qcfg->max_facet_results = json_integer_value(value);
+        }
+        if (strcmp(J_S_RANKALGO, key) == 0) {
+            if (!json_is_array(value)) {
+                return "Rank algorithm needs to be an array";
+            }
+            size_t index;
+            json_t *s;
+            json_array_foreach(value, index, s) {
+                if (!json_is_string(s)) {
+                    return "Rank alorithms must be string";
+                }
+                SORT_RULE r = rulestr_to_rule(json_string_value(s));
+                if (r == R_MAX) {
+                    return "Unknown rank rule specified";
+                }
+                qcfg->rank_algo[index] = r;
+            }
+            qcfg->num_rules = index;
+        }
+    }
+    if (qcfg->hits_per_page > qcfg->max_hits) {
+        return "Hits per page cannot be more than maximum hits";
+    }
+    if (qcfg->max_hits > MAX_HITS_LIMIT) {
+        return "Maximum hits cannot be more than 1000";
+    }
+    return NULL;
+}
 
 static int index_load_json_settings(struct index *in, json_t *j) {
     const char *key;
@@ -348,6 +391,11 @@ static int index_load_json_settings(struct index *in, json_t *j) {
     json_object_foreach(j, key, value) {
         if ((strcmp(J_S_INDEXFIELDS, key) == 0) && !is_json_string_array(value)) return -1;
         if ((strcmp(J_S_FACETFIELDS, key) == 0) && !is_json_string_array(value)) return -1;
+        if ((strcmp(J_S_HITS_PER_PAGE, key) == 0) && !json_is_number(value)) return -1;
+        if ((strcmp(J_S_MAX_HITS, key) == 0) && !json_is_number(value)) return -1;
+        if ((strcmp(J_S_MAX_FACET_RESULTS, key) == 0) && !json_is_number(value)) return -1;
+        if ((strcmp(J_S_RANK_BY, key) == 0) && !json_is_object(value)) return -1;
+        if ((strcmp(J_S_SORT_BY, key) == 0) && !json_is_object(value)) return -1;
     }
     // Now do the actual parsing of settings
     int changed = 0;
@@ -359,6 +407,13 @@ static int index_load_json_settings(struct index *in, json_t *j) {
             changed |= cfg_set_list_fields(&in->cfg.facet_fields, value);
         }
     }
+
+    const char *parse_fail = parse_query_settings(j, in->cfg.qcfg);
+    if (parse_fail) {
+        M_ERR("Parse error : %s", parse_fail);
+        return -1;
+    }
+ 
     // We need atleast index fields to be configured, before we are in configured status
     // unless this happens, we do not start indexing data
     if (kv_size(in->cfg.index_fields)) {
@@ -380,7 +435,20 @@ static char *index_settings_to_json(const struct index *in) {
     for (int i=0; i<kv_size(in->cfg.facet_fields); i++) {
         json_array_append_new(jf, json_string(kv_A(in->cfg.facet_fields, i)));
     }
+
     json_object_set_new(jo, J_S_FACETFIELDS, jf);
+    json_object_set_new(jo, J_S_HITS_PER_PAGE, json_integer(in->cfg.qcfg->hits_per_page));
+    json_object_set_new(jo, J_S_MAX_HITS, json_integer(in->cfg.qcfg->max_hits));
+    json_object_set_new(jo, J_S_MAX_FACET_RESULTS, json_integer(in->cfg.qcfg->max_facet_results));
+    // Save rules
+    json_t *jr = json_array();
+    json_object_set_new(jo, J_S_RANKALGO, jr);
+    for (int i = 0; i < in->cfg.qcfg->num_rules; i++) {
+        const char *rstr = rule_to_rulestr(in->cfg.qcfg->rank_algo[i]);
+        if (rstr) {
+            json_array_append_new(jr, json_string(rstr));
+        }
+    }
  
     char *resp = json_dumps(jo, JSON_PRESERVE_ORDER|JSON_INDENT(4));
     json_decref(jo);
@@ -592,11 +660,20 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
 
     if (jq && json_is_object(jq)) {
         q = query_new(in);
-        // TODO: read query cfg before reading the query string
-        //
-        // TODO: Parse query config overrides
-        //
-        // TODO: Parse filters
+        q->page_num = 1; // By default get the first page
+        
+        // Copy default query settings for the index
+        memcpy(&q->cfg, in->cfg.qcfg, sizeof(struct query_cfg));
+
+        // Parse query config overrides and other query info
+        const char *fail = parse_query_settings(jq, &q->cfg);
+        if (fail) {
+            response = failure_message(fail);
+            req->res.status = 400;
+            goto send_response;
+        }
+
+        // Parse filters
         json_t *jf = json_object_get(jq, J_FILTER);
         // We have a filter, let us parse it
         if (jf && !json_is_null(jf) && json_object_size(jf)) {
@@ -613,6 +690,27 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
             }
         }
 
+        json_t *jp = json_object_get(jq, J_PAGE);
+        if (jp && json_is_integer(jp)) {
+            q->page_num = json_integer_value(jp);
+        }
+        // Make sure page is within our limits
+        if ((q->page_num <= 0) || (q->page_num * q->cfg.hits_per_page > q->cfg.max_hits)) {
+            M_DBG("Query request for page '%d' more than our limit", q->page_num);
+            req->res.status = 400;
+            response = failure_message("Page number requested over limit");
+            goto send_response;
+        }
+
+        json_t *je = json_object_get(jq, J_EXPLAIN);
+        if (je && json_is_boolean(je)) {
+            q->explain = json_is_true(je);
+        }
+
+        // TODO: Update rank_rule with order once that is done
+        q->rank_rule[q->cfg.num_rules] = R_DONE;
+        memcpy(&q->rank_rule[0], q->cfg.rank_algo, q->cfg.num_rules * sizeof(SORT_RULE));
+
         const char *qstr = json_string_value(json_object_get(jq, J_QUERY));
         if (qstr) {
             q->text = strdup(qstr);
@@ -622,7 +720,6 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
         generate_query_terms(q);
         dump_query(q);
 
-        // TODO: Read filters and other query related configuration
         response = execute_query(q);
     } else {
         req->res.status = 400;
@@ -768,6 +865,18 @@ static void setup_index_handlers(struct index *in, const char *appid, const char
     }
 }
 
+static struct query_cfg *query_config_new(void) {
+    struct query_cfg *qcfg = calloc(1, sizeof(struct query_cfg));
+    qcfg->hits_per_page = DEF_HITS_PER_PAGE;
+    qcfg->max_facet_results = DEF_FACET_RESULTS;
+    qcfg->max_hits = DEF_MAX_HITS;
+    qcfg->rank_by = -1;         // Rank by no fields
+    qcfg->rank_sort = false;    // Apply ranking finally
+    qcfg->rank_asc  = false;    // Rank in descending order
+    qcfg->num_rules = default_num_rules;
+    memcpy(qcfg->rank_algo, &default_rule, sizeof(SORT_RULE) * default_num_rules);
+    return qcfg;
+}
 
 /* Creates a new index or loads existing index */
 struct index *index_new(const char *name, struct app *a, int num_shards) {
@@ -778,8 +887,6 @@ struct index *index_new(const char *name, struct app *a, int num_shards) {
     in->time_created = get_utc_seconds();
     in->fctx = flakeid_ctx_create_with_spoof(NULL);
     in->mapping = mapping_new(in);
-    // TODO : Update custom_id when a custom id is configured
-    in->cfg.custom_id = false;
     kv_init(in->shards);
 
     // Initialize config
@@ -787,6 +894,8 @@ struct index *index_new(const char *name, struct app *a, int num_shards) {
     kv_init(in->cfg.index_fields);
     kv_init(in->cfg.facet_fields);
 
+    // Setup default query config
+    in->cfg.qcfg = query_config_new();
 
     // Create index path if not present
     char path[PATH_MAX];
@@ -855,6 +964,7 @@ void index_free(struct index *in) {
     }
     free_kvec_strings(&in->cfg.index_fields);
     free_kvec_strings(&in->cfg.facet_fields);
+    free(in->cfg.qcfg);
     free(in);
 }
 

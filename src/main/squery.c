@@ -5,9 +5,14 @@
 #include "squery.h"
 #include "workers.h"
 #include "debug.h"
+#include "docrank.h"
+#include "utils.h"
+#include "sindex.h"
 
-static struct squery_result *squery_result_new(void) {
+
+static struct squery_result *squery_result_new(struct query *q) {
     struct squery_result *sqres = calloc(1, sizeof(struct squery_result));
+    sqres->exact_docid_map = calloc(q->num_words, sizeof(struct bmap *));
     return sqres;
 }
 
@@ -69,6 +74,29 @@ static void process_termresult(struct squery *sq, struct sindex *si, struct term
         td->tbmap = oper_or(o);
         oper_total_free(o);
     }
+
+#if 0
+#ifdef TRACK_WIDS
+    uint32_t wid;
+    printf("Num matches %u\n", kh_size(tr->wordids));
+    kh_foreach_key(tr->wordids, wid, {
+        MDB_val key;
+        MDB_val data;
+        key.mv_size = sizeof(uint32_t);
+        key.mv_data = (void *)&wid;
+        // If it already exists, we need not write so set a NULL value to 
+        // avoid looking up mdb everytime we encounter this facetid
+        if (mdb_get(sq->txn, si->wid2chr_dbi, &key, &data) == 0) {
+            printf("wid %u : ", wid);
+            chr_t *chars = data.mv_data;
+            for (int i = 0; i < data.mv_size/sizeof(chr_t); i++) {
+                printf("%c", (char)chars[i]);
+            }
+            printf("\n");
+        }
+    });
+#endif
+#endif
 }
 
 static void lookup_terms(struct squery *sq, struct sindex *si) {
@@ -83,6 +111,14 @@ static void lookup_terms(struct squery *sq, struct sindex *si) {
         process_termresult(sq, si, td);
         dump_termresult(td->tresult);
         dump_bmap(td->tbmap);
+    }
+
+    for (int i = 0; i < sq->q->num_words; i++) {
+        uint32_t wid = dtrie_lookup_exact(si->trie, kv_A(sq->q->words,i));
+        if (wid) {
+            // TODO: Handle multiple fields
+            sqres->exact_docid_map[i] = mbmap_load_bmap(sq->txn, si->wid2bmap_dbi, IDPRIORITY(wid, 0));
+        }
     }
 }
 
@@ -186,16 +222,47 @@ static void termdata_free(termdata_t *td) {
     bmap_free(td->tbmap);
 }
 
-void sqresult_free(struct squery_result *sqres) {
+void sqresult_free(struct query *q, struct squery_result *sqres) {
+    for (int i = 0; i < q->num_words; i++) {
+        if (sqres->exact_docid_map[i]) {
+            bmap_free(sqres->exact_docid_map[i]);
+        }
+    }
+    free(sqres->exact_docid_map);
+    free(sqres->ranks);
     free(sqres);
 }
 
+static inline int sort_results(struct query *q, struct docrank *ranks, uint32_t resultcount) {
+    // How many entries do we want to partially sort?
+    // If user requests for page 1 we only need 1 * hitsperpage
+    int sortcnt = q->cfg.hits_per_page * q->page_num;
+    // Hits per page can be 0 if you want to perform an aggregate query
+    // or disjunctive facet lookup
+    if (q->cfg.hits_per_page > 0) {
+        // we only need a partial sort here, final sorting will be done
+        // when all shard query results are merged
+        if (resultcount >= PARTIAL_SORT_LIMIT  &&  resultcount > sortcnt) {
+            rank_partial_sort(ranks, 0, resultcount-1, sortcnt, q->rank_rule);
+        } else {
+            rank_sort(resultcount, ranks, q->rank_rule);
+        }
+    }
+
+    return (sortcnt < resultcount) ? sortcnt : resultcount;
+}
+
 void execute_squery(void *w) {
+    struct timeval start;
     struct squery *sq = w;
+
+    // Start time
+    gettimeofday(&start, NULL);
+
     int num_terms = kv_size(sq->q->terms);
     M_DBG("Performing squery for shard %d", sq->shard_idx);
     // First allocate a sq_result
-    sq->sqres = squery_result_new();
+    sq->sqres = squery_result_new(sq->q);
     // Let the shard index handle the query now
     struct shard *s = sq->shard;
     struct sindex *si = s->sindex;
@@ -211,12 +278,24 @@ void execute_squery(void *w) {
     if (sq->sqres->docid_map == NULL) {
        sq->sqres->num_hits = 0;
        goto cleanup;
-    } else {
-        dump_bmap(sq->sqres->docid_map);
-        sq->sqres->num_hits = bmap_cardinality(sq->sqres->docid_map);
-        dump_bmap(sq->sqres->docid_map);
-        bmap_free(sq->sqres->docid_map);
     }
+    trace_query("Lookup documents in", &start);
+
+    // TODO: Apply filters
+
+    sq->sqres->num_hits = bmap_cardinality(sq->sqres->docid_map);
+    printf("Found %d hits\n", sq->sqres->num_hits);
+
+    // Perform ranking
+    uint32_t resultcount = sq->sqres->num_hits;
+    struct docrank *ranks = perform_ranking(sq, sq->sqres->docid_map, &resultcount);
+    trace_query("Ranks calculated in", &start);
+    //dump_bmap(sq->sqres->docid_map);
+    sq->sqres->rank_count = sort_results(sq->q, ranks, resultcount);
+    trace_query("Ranks sorted in", &start);
+    sq->sqres->ranks = ranks;
+
+    bmap_free(sq->sqres->docid_map);
 
 cleanup:
     // cleanup all termdata

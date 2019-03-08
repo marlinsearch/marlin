@@ -9,11 +9,18 @@
 #include "flakeid.h"
 #include "kvec.h"
 #include "mapping.h"
+#include "query.h"
 
 #define MAX_INDEX_NAME      128
 #define MAX_NUM_SHARDS      16
 #define DEFAULT_NUM_SHARDS  1
 #define JOB_QUEUE_LEN       4096
+
+// Index default query settings
+#define DEF_HITS_PER_PAGE   20
+#define DEF_MAX_HITS        500
+#define MAX_HITS_LIMIT      1000
+#define DEF_FACET_RESULTS   10
 
 typedef enum jobtype {
     JOB_ADD,
@@ -29,9 +36,9 @@ typedef enum jobtype {
 /* Configuration information for an Index */
 struct index_cfg {
     bool configured;
-    bool custom_id;
     kvec_t(char *) index_fields; 
     kvec_t(char *) facet_fields; 
+    struct query_cfg *qcfg; // Default query configuration
 };
 
 /**

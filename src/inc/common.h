@@ -75,9 +75,16 @@
 #define J_FIELDID       "fieldId"
 #define J_IS_INDEXED    "isIndexed"
 #define J_IS_FACET      "isFacet"
+
 // API Settings fields
-#define J_S_INDEXFIELDS "indexedFields"
-#define J_S_FACETFIELDS "facetFields"
+#define J_S_INDEXFIELDS     "indexedFields"
+#define J_S_FACETFIELDS     "facetFields"
+#define J_S_HITS_PER_PAGE   "hitsPerPage"
+#define J_S_MAX_HITS        "maxHits"
+#define J_S_MAX_FACET_RESULTS "maxFacetResults"
+#define J_S_RANK_BY         "rankBy"
+#define J_S_SORT_BY         "sortBy"
+#define J_S_RANKALGO        "rankAlgorithm"
 
 
 // config / settings field names
@@ -95,10 +102,16 @@
 // Query attributes
 #define J_QUERY         "q"
 #define J_FILTER        "filter"
+#define J_PAGE          "page"
+#define J_EXPLAIN       "explain"
 
 // Query response attributes
 #define J_R_TOTALHITS     "totalHits"
+#define J_R_NUMHITS       "numHits"
+#define J_R_HITS          "hits"
 #define J_R_TOOK          "took"
+#define J_R_PAGE          "page"
+#define J_R_NUMPAGES      "numPages"
 
 #endif
 

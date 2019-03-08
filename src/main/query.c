@@ -3,10 +3,112 @@
 #include "marlin.h"
 #include "utils.h"
 #include "filter.h"
+#include "debug.h"
 
 static void term_free(term_t *t) {
     wordfree(t->word);
     free(t);
+}
+
+static void explain_rank(struct query *q, json_t *j, struct docrank *r) {
+    json_t *e = json_object();
+    int i = 0;
+    while (q->rank_rule[i] != R_DONE) {
+        if (q->rank_rule[i] == R_TYPO) {
+            json_object_set_new(e, rule_to_rulestr(q->rank_rule[i]), json_integer(r->typos));
+        } else if (q->rank_rule[i] == R_PROX) {
+            json_object_set_new(e, rule_to_rulestr(q->rank_rule[i]), json_integer(r->proximity));
+        } else if (q->rank_rule[i] == R_POS) {
+            json_object_set_new(e, rule_to_rulestr(q->rank_rule[i]), json_integer(r->position));
+        } else if (q->rank_rule[i] == R_EXACT) {
+            json_object_set_new(e, rule_to_rulestr(q->rank_rule[i]), json_integer(r->exact));
+        } else if (q->rank_rule[i] == R_FIELD) {
+            json_object_set_new(e, rule_to_rulestr(q->rank_rule[i]), json_integer(r->field));
+        }
+        i++;
+    }
+    json_object_set_new(j, "_explain", e);
+}
+
+static json_t *form_result(struct query *q, struct squery *sq) {
+    json_t *j = json_object();
+    // Process response within shardquery
+    int total_hits = 0;
+    int total_ranks = 0;
+    for (int i = 0; i < q->in->num_shards; i++) {
+        M_DBG("Num hits from shard %d is %d", i, sq[i].sqres->num_hits);
+        total_hits += sq[i].sqres->num_hits;
+        total_ranks += sq[i].sqres->rank_count;
+    }
+
+    // Make sure we are within the limits
+    int page_s = q->cfg.hits_per_page * (q->page_num -1);
+    if (page_s > total_hits) {
+        page_s = total_hits;
+    }
+    int page_e = page_s + q->cfg.hits_per_page;
+    if (page_e > total_hits) {
+        page_e = total_hits;
+    }
+    int num_hits = page_e - page_s;
+    int max_hits = q->cfg.max_hits;
+    if (max_hits > total_hits) {
+        max_hits = total_hits;
+    }
+
+    json_t *jhits = json_array();
+    // sort the final response
+    struct docrank *ranks = NULL;
+    if (q->in->num_shards == 1) {
+        // If we have a single shard, take the result as is
+        ranks = sq[0].sqres->ranks;
+        rank_sort(sq[0].sqres->rank_count, ranks, q->rank_rule);
+    } else {
+        // If we have more than one shard, allocate data to combine all shard results
+        ranks = malloc(sizeof(struct docrank) * total_ranks);
+        int pos = 0;
+        for (int i = 0; i < q->in->num_shards; i++) {
+            // Set shardid, we need that lookup documents
+            for (int j = 0; j < sq[i].sqres->rank_count; j++) {
+                sq[i].sqres->ranks[j].shard_id = i;
+            }
+            // Now copy shard ranks to full ranks
+            memcpy(&ranks[pos], sq[i].sqres->ranks, sq[i].sqres->rank_count * sizeof(struct docrank));
+            pos += sq[i].sqres->rank_count;
+        }
+        printf("Sorting %d hits\n", total_ranks);
+        // TODO: do a partial sort and sort ?
+        rank_sort(total_ranks, ranks, q->rank_rule);
+    }
+
+    for (int i=page_s; i<page_e; i++) {
+        struct shard *s = kv_A(q->in->shards,ranks[i].shard_id);
+        char *o = sdata_get_document_byid(s->sdata, ranks[i].docid);
+        if (o) {
+            json_error_t error;
+            json_t *hit = json_loads(o, 0, &error);
+            if (hit) {
+                if (q->explain) {
+                    explain_rank(q, hit, &ranks[i]);
+                }
+                json_array_append_new(jhits, hit);
+            }
+            free(o);
+        }
+    }
+ 
+
+    if (q->in->num_shards > 1) {
+        free(ranks);
+    }
+     
+    // Fill the response
+    json_object_set_new(j, J_R_TOTALHITS, json_integer(total_hits));
+    json_object_set_new(j, J_R_NUMHITS, json_integer(num_hits));
+    json_object_set_new(j, J_R_PAGE, json_integer(q->page_num));
+    json_object_set_new(j, J_R_NUMPAGES, json_integer(LIKELY(q->cfg.hits_per_page)?((float)max_hits/q->cfg.hits_per_page) + 0.9999:0));
+    json_object_set_new(j, J_R_HITS, jhits);
+    return j;
 }
 
 /* Executes a parsed query.  This inturn sends the query to multiple shards
@@ -48,20 +150,15 @@ char *execute_query(struct query *q) {
         sq[0].sqres = NULL; // This gets allocated when query is executed.
         execute_squery(&sq[0]);
     }
+    trace_query("Got results in ", &start);
 
-    json_t *j = json_object();
+    json_t *j = form_result(q, sq);
 
-    // Process response within shardquery
-    int total_hits = 0;
+    trace_query("Formed result in ", &start);
     for (int i = 0; i < in->num_shards; i++) {
-        M_DBG("Num hits from shard %d is %d", i, sq[i].sqres->num_hits);
-        total_hits += sq[i].sqres->num_hits;
-        sqresult_free(sq[i].sqres);
+        sqresult_free(q, sq[i].sqres);
     }
     free(sq);
-
-    // Fill the response
-    json_object_set_new(j, J_R_TOTALHITS, json_integer(total_hits));
 
     // Finally set the time taken
     gettimeofday(&stop, NULL);

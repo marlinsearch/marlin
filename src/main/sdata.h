@@ -30,6 +30,7 @@ void sdata_free(struct sdata *sd);
 void sdata_delete(struct sdata *sd);
 void sdata_clear(struct sdata *sd);
 char *sdata_get_document(const struct sdata *sd, const char *id);
+char *sdata_get_document_byid(const struct sdata *sd, uint32_t docid);
 uint32_t sdata_delete_document(struct sdata *sd, const char *id);
 
 #endif

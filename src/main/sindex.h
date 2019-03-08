@@ -9,6 +9,8 @@
 #include "dtrie.h"
 #include "squery.h"
 
+//#define TRACK_WIDS 1
+
 KHASH_MAP_INIT_INT(FACETID2STR, char *) // Facet id to string mapping
 KHASH_MAP_INIT_INT64(WID2MBMAP, struct mbmap *) // Word id to mbmap
 KHASH_MAP_INIT_INT(UNIQWID, int) // A hash set to maintain unique wordids for an document
@@ -70,6 +72,9 @@ struct sindex {
     MDB_dbi docid2fndata_dbi;     // docid to facet / numeric data 
     MDB_dbi docid2wpos_dbi;       // docid to word freq, position data
     MDB_dbi phrase_dbi;         // Phrase query dbi, adjacent wids mapped to docids containing the pair
+#ifdef TRACK_WIDS
+    MDB_dbi wid2chr_dbi;        //
+#endif
     MDB_dbi num_dbi[MAX_FIELDS];
 };
 
@@ -99,6 +104,7 @@ void sindex_delete(struct sindex *si);
 void sindex_clear(struct sindex *si);
 void sindex_set_mapping(struct sindex *si, const struct mapping *map);
 void sindex_delete_document(struct sindex *si, const json_t *j, uint32_t docid);
+uint8_t *read_vint(uint8_t *buf, int *value);
 
 #endif
 
