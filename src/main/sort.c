@@ -4,8 +4,8 @@
 #include "sort.h"
 #include <stdbool.h>
 
-SORT_RULE default_rule[] = { R_TYPO, R_PROX, R_POS, R_EXACT };
-int default_num_rules = 4;
+SORT_RULE default_rule[] = { R_TYPO, R_PROX, R_FIELD, R_POS, R_EXACT };
+int default_num_rules = 5;
 
 const char *sort_rule_str[] = {
     "typos",
