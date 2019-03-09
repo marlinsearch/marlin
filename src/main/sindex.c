@@ -397,6 +397,9 @@ static void store_wordpos_data(struct sindex *si, struct doc_data *od) {
         // Updates the position information
         *wid_count =  *wid_count + 1;
         dpos = write_vint(dpos, wp->position);
+        // 0xff once we done with writing a field positions
+        // this lets us skip positions for a field without reading 
+        // count vints
         if (!((x + 1) < wp_len && h[x+1].wp->wid == last_wid && 
                     h[x+1].wp->priority == last_priority)) {
             *dpos = 0xFF;

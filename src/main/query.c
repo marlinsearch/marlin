@@ -63,6 +63,9 @@ static json_t *form_result(struct query *q, struct squery *sq) {
         // If we have a single shard, take the result as is
         ranks = sq[0].sqres->ranks;
         rank_sort(sq[0].sqres->rank_count, ranks, q->rank_rule);
+        for (int j = 0; j < sq[0].sqres->rank_count; j++) {
+            sq[0].sqres->ranks[j].shard_id = 0;
+        }
     } else {
         // If we have more than one shard, allocate data to combine all shard results
         ranks = malloc(sizeof(struct docrank) * total_ranks);
@@ -82,7 +85,7 @@ static json_t *form_result(struct query *q, struct squery *sq) {
     }
 
     for (int i=page_s; i<page_e; i++) {
-        struct shard *s = kv_A(q->in->shards,ranks[i].shard_id);
+        struct shard *s = kv_A(q->in->shards, ranks[i].shard_id);
         char *o = sdata_get_document_byid(s->sdata, ranks[i].docid);
         if (o) {
             json_error_t error;

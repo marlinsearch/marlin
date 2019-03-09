@@ -13,6 +13,7 @@
 static struct squery_result *squery_result_new(struct query *q) {
     struct squery_result *sqres = calloc(1, sizeof(struct squery_result));
     sqres->exact_docid_map = calloc(q->num_words, sizeof(struct bmap *));
+    sqres->all_wordids = kh_init(WID2TYPOS);
     return sqres;
 }
 
@@ -30,17 +31,25 @@ static struct bmap *get_twid_to_docids(struct squery *sq, struct sindex *si, uin
 }
 
 static inline void add_wid_to_wordids(uint32_t wid, void *data) {
-    khiter_t k;
     khash_t(WID2TYPOS) *wordids = data;
+    khiter_t k;
     kh_set(WID2TYPOS, wordids, wid, 0);
 }
 
+// TODO: Make sure we set the least distance when we get multiple entries with different dist
+// for same word id
+static inline void add_wid_dist_to_wordids(uint32_t wid, int dist, void *data) {
+    khash_t(WID2TYPOS) *wordids = data;
+    khiter_t k;
+    kh_set(WID2TYPOS, wordids, wid, dist);
+}
 
 static void set_wids_under_twid(struct squery *sq, struct sindex *si, termresult_t *tr) {
     // TODO: Currently it handles matches from all fields, restrict based on requested fields
     struct bmap *b = mbmap_load_bmap(sq->txn, si->twid2widbmap_dbi, IDPRIORITY(tr->twid, 0));
     if (b) {
         bmap_iterate(b, add_wid_to_wordids, tr->wordids);
+        bmap_iterate(b, add_wid_to_wordids, sq->sqres->all_wordids);
     }
     bmap_free(b);
 }
@@ -65,9 +74,12 @@ static void process_termresult(struct squery *sq, struct sindex *si, struct term
         // especially when we start handling matches in particular fields only
         struct oper *o = oper_new();
         uint32_t wid;
-        kh_foreach_key(tr->wordids, wid, {
+        int dist;
+        khash_t(WID2TYPOS) *all_wordids = sq->sqres->all_wordids;
+        kh_foreach(tr->wordids, wid, dist, {
             struct bmap *b = mbmap_load_bmap(sq->txn, si->wid2bmap_dbi, IDPRIORITY(wid, 0));
             if (b) {
+                add_wid_dist_to_wordids(wid, dist, all_wordids);
                 oper_add(o, b);
             }
         });
@@ -75,8 +87,8 @@ static void process_termresult(struct squery *sq, struct sindex *si, struct term
         oper_total_free(o);
     }
 
-#if 0
 #ifdef TRACK_WIDS
+#if 1
     uint32_t wid;
     printf("Num matches %u\n", kh_size(tr->wordids));
     kh_foreach_key(tr->wordids, wid, {
@@ -116,7 +128,7 @@ static void lookup_terms(struct squery *sq, struct sindex *si) {
     for (int i = 0; i < sq->q->num_words; i++) {
         uint32_t wid = dtrie_lookup_exact(si->trie, kv_A(sq->q->words,i));
         if (wid) {
-            // TODO: Handle multiple fields
+            // TODO: Handle field restricted queries
             sqres->exact_docid_map[i] = mbmap_load_bmap(sq->txn, si->wid2bmap_dbi, IDPRIORITY(wid, 0));
         }
     }
@@ -166,6 +178,26 @@ static struct bmap *get_matching_docids(struct squery *sq) {
     }
 
     struct bmap *ret = NULL;
+    // This happens when query text is 2 words
+    // 'a new' => (a & new) | anew 
+    if (num_terms == 3) {
+        // Make sure we have matches for both words
+        if (sqres->termdata[0].tbmap && sqres->termdata[1].tbmap) {
+            struct oper *o = oper_new();
+            oper_add(o, sqres->termdata[0].tbmap);
+            oper_add(o, sqres->termdata[1].tbmap);
+            ret = oper_and(o);
+            // Make sure we have common results or throw it out
+            if (ret && bmap_cardinality(ret) == 0) {
+                bmap_free(ret);
+                ret = NULL;
+            }
+            oper_free(o);
+        }
+        // Handle the last term
+        goto last_term;
+    }
+
     /* In case of multi word queries, a bunch of terms are generated.
      * Example for a search of 'a new hope', the terms are as follows
      * a) a
@@ -228,6 +260,7 @@ void sqresult_free(struct query *q, struct squery_result *sqres) {
             bmap_free(sqres->exact_docid_map[i]);
         }
     }
+    kh_destroy(WID2TYPOS, sqres->all_wordids);
     free(sqres->exact_docid_map);
     free(sqres->ranks);
     free(sqres);
@@ -284,7 +317,6 @@ void execute_squery(void *w) {
     // TODO: Apply filters
 
     sq->sqres->num_hits = bmap_cardinality(sq->sqres->docid_map);
-    printf("Found %d hits\n", sq->sqres->num_hits);
 
     // Perform ranking
     uint32_t resultcount = sq->sqres->num_hits;
