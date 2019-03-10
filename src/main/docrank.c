@@ -160,9 +160,9 @@ static inline void rank_three_terms(struct docrank *rank, struct squery *sq, uin
     khash_t(WID2TYPOS) *all_wordids = sq->sqres->all_wordids;
     int num_words = 2;
     int num_terms = 3;
-    int typos[2] = {0xFF};
-    int *positions[3] = {0};
-    int plength[3] = {0};
+    int typos[2] = {0xFF, 0xFF};
+    int *positions[3] = {0, 0, 0};
+    int plength[3] = {0, 0, 0};
     // First set exact matches and typos
     for (int i = 0; i < num_words; i++) {
         if (sq->sqres->exact_docid_map[i]) {
