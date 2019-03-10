@@ -790,7 +790,7 @@ struct termresult *dtrie_lookup_term(struct dtrie *dt, term_t *t) {
     tr->wordids = kh_init(WID2TYPOS);
 
     word_t *w = t->word;
-    if (w->length <= LEVLIMIT) {
+    if (t->prefix && w->length <= LEVLIMIT) {
         lookup_twid(dt, t, tr);
         return tr;
     }

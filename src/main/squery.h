@@ -20,6 +20,7 @@ struct squery_result {
     struct bmap *docid_map;
     struct docrank *ranks;
     struct bmap **exact_docid_map; // Documents which are exact match of size q->num_words
+    khash_t(WID2TYPOS) *all_wordids; // All matching word ids to typos for all terms
     int rank_count;
     int num_hits;
 };
