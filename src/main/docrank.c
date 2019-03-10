@@ -241,6 +241,124 @@ static inline void rank_three_terms(struct docrank *rank, struct squery *sq, uin
     }
 }
 
+static inline int term_to_word_idx(int term, int num_terms) {
+    if (UNLIKELY(term) == (num_terms - 1)) return 0;
+    return term / 2;
+}
+
+//  0  1   2     3       0   1     2     3       4       5         6        7
+// (a new hope movie) => a, anew, new, newhope, hope, hopemovie, movie, anewhopemovie
+static inline void rank_many_terms(struct docrank *rank, struct squery *sq, uint8_t *dpos) {
+    // aaa bbb => aaa bbb aaabbb
+    khash_t(WID2TYPOS) *all_wordids = sq->sqres->all_wordids;
+    int num_words = sq->q->num_words;
+    int num_terms = kv_size(sq->q->terms);
+    int typos[num_words];
+    int *positions[num_words];
+    int plength[num_words];
+    int proximity[num_words];
+
+    // First set exact matches and typos
+    for (int i = 0; i < num_words; i++) {
+        if (sq->sqres->exact_docid_map[i]) {
+            if (bmap_exists(sq->sqres->exact_docid_map[i], rank->docid)) {
+                rank->exact++;
+                typos[i] = 0;
+            } else {
+                typos[i] = 0xFF;
+            }
+        } else {
+            typos[i] = 0xFF;
+        }
+        positions[i] = NULL;
+        plength[i] = 0;
+        proximity[i] = 8;
+    }
+
+    rank->proximity = 0;
+
+    uint16_t numwid = *(uint16_t *) dpos;
+    uint8_t *pos = dpos + 2;
+    wid_info_t *info = (wid_info_t *)pos;
+    khiter_t k;
+    int dist;
+
+    // Iterate over all words and check which word matches which terms and set rank info
+    for (int i = 0; i < numwid; i++) {
+        // Ok the word matches some term
+        if ((dist = kh_get_val(WID2TYPOS, all_wordids, info[i].wid, 0xFF)) != 0xFF) {
+            int mterm = get_matching_term(sq->sqres, num_terms, info[i].wid);
+            // If it matches the combined term / last term proximity is 1
+            if (UNLIKELY(mterm == (num_terms-1))) {
+                rank->proximity = num_words - 1;
+                memset(&typos, 0, sizeof(typos));
+            }
+            int widx = term_to_word_idx(mterm, num_terms);
+            
+            if (dist < typos[widx]) {
+                typos[widx] = dist;
+            }
+            // Now dump positions for this term / word
+            positions[widx] = fill_positions(&info[i], dpos, positions[widx], &plength[widx]);
+            if ((mterm % 2) == 1) {
+                proximity[widx] = 1;
+                // anew -> gets filled in both a and new, ignore last term match
+                if (mterm != (num_terms - 1)) {
+                    typos[widx + 1] = 0;
+                    positions[widx + 1] = fill_positions(&info[i], dpos, 
+                            positions[widx + 1], &plength[widx + 1]);
+                }
+            }
+        }
+    }
+
+    // Sort the position information, keep track of typos and best matching field / position
+    uint32_t best_position = 0xFFFFFFFF;
+    rank->typos = 0;
+    for (int x = 0; x < num_words; x++) {
+        if (plength[x]) {
+            ks_introsort(sort_positions, plength[x], positions[x]);
+            if (positions[x][0] < best_position) {
+                best_position = positions[x][0];
+            }
+        }
+        rank->typos += typos[x];
+    }
+
+    // Set the field / position from best position
+    rank->field = (best_position >> 16);
+    rank->position = best_position & 0xFFFF;
+
+    // Finally calculate proximity if required
+    if (LIKELY(rank->proximity != num_words-1)) {
+        for (int x = 0; x < num_words-1; x++) {
+            if (proximity[x] == 1) goto add_prox;
+            int i = 0, j = 0, p1len = plength[x], p2len = plength[x+1];
+            int mindiff = 8;
+            while((i < p1len) && (j < p2len)) {
+                int pos1 = positions[x][i];
+                int pos2 = positions[x+1][j];
+                int diff = abs(pos1 - pos2);
+                // TODO: If diff is 0, discard this result?
+                // str="aaaaa test me" and search for "aaaaa aaaaa"
+                if (diff != 0) {
+                    if (diff < mindiff) {
+                        mindiff = diff;
+                        if (mindiff == 1) break;
+                    }
+                }
+                pos1 > pos2 ? j++ : i++;
+            }
+            proximity[x] = mindiff;
+add_prox:
+            rank->proximity += proximity[x];
+        }
+    }
+
+    for (int i = 0; i < num_words; i++) {
+        free(positions[i]);
+    }
+}
 
 static inline void calculate_rank(struct docrank *rank, struct squery *sq, uint8_t *dpos) {
     int num_words = sq->q->num_words;
@@ -268,6 +386,9 @@ static inline void calculate_rank(struct docrank *rank, struct squery *sq, uint8
     else if (num_words == 2) {
         rank->proximity = 0xFFFF;
         rank_three_terms(rank, sq, dpos);
+    } else {
+        rank->proximity = 0xFFFF;
+        rank_many_terms(rank, sq, dpos);
     }
 
 }
