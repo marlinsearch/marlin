@@ -2,8 +2,8 @@
 Resource  common.robot
 
 *** Variables ***
-${settings}     {"indexedFields": ["str", "num", "numlist"]}
-${index}  {"name" : "testindex", "numShards": 5}
+${settings}     {"indexedFields": ["str", "n", "nl", "b"], "facetFields": ["f", "fl"]}
+${index}  {"name" : "testindex", "nShards": 5}
 
 
 *** Test Cases ***
@@ -25,11 +25,11 @@ Configure the index
 Load some data
     @{json_data}  Set Variable   
        ...  [
-       ...   {"str": "a", "num": 1, "numlist": [1,2,3]},
-       ...   {"str": "a", "num": 2, "numlist": [2,3,4]},
-       ...   {"str": "a", "num": 3, "numlist": [3,4,5]},
-       ...   {"str": "a", "num": 4, "numlist": [4,5,6]},
-       ...   {"str": "a", "num": 5, "numlist": [5,6,7]}
+       ...   {"str": "a", "n": 1, "nl": [1,2,3], "f": "aaa", "fl": ["zzz", "yyy"], "b": true},
+       ...   {"str": "a", "n": 2, "nl": [2,3,4], "f": "bbb", "fl": ["yyy", "xxx"], "b": false},
+       ...   {"str": "a", "n": 3, "nl": [3,4,5], "f": "ccc", "fl": ["xxx", "www"], "b": true},
+       ...   {"str": "a", "n": 4, "nl": [4,5,6], "f": "ddd", "fl": ["www", "vvv"], "b": false},
+       ...   {"str": "a", "n": 5, "nl": [5,6,7], "f": "eee", "fl": ["vvv", "uuu"], "b": true}
        ...  ]
     ${json_str}     Catenate    @{json_data}
 
@@ -44,22 +44,46 @@ Test an empty query
     Integer     response status     200
     Integer     $.totalHits         5
 
-Test query numeq filter
-    POST         /1/indexes/testindex/query  {"q": "", "filter": {"num": 5}}
+Test query num eq filter
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"n": 5}}
     Integer     response status     200
     Integer     $.totalHits         1
-    POST         /1/indexes/testindex/query  {"q": "", "filter": {"numlist": 5}}
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"nl": 5}}
     Integer     response status     200
     Integer     $.totalHits         3
-    POST         /1/indexes/testindex/query  {"q": "", "filter": {"numlist": {"$eq": 5}}}
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"nl": {"$eq": 5}}}
     Integer     response status     200
     Integer     $.totalHits         3
 
-Test query numeq non matching filter
-    POST         /1/indexes/testindex/query  {"q": "", "filter": {"num": 500}}
+Test query num eq non matching filter
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"n": 500}}
     Integer     response status     200
     Integer     $.totalHits         0
 
+Test query str eq filter
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"f": "aaa"}}
+    Integer     response status     200
+    Integer     $.totalHits         1
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"fl": {"$eq": "uuu"}}}
+    Integer     response status     200
+    Integer     $.totalHits         1
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"fl": "xxx"}}
+    Integer     response status     200
+    Integer     $.totalHits         2
+ 
+Test query str eq non matching filter
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"f": "fff"}}
+    Integer     response status     200
+    Integer     $.totalHits         0
+
+ Test query bool eq filter
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"b": true}}
+    Integer     response status     200
+    Integer     $.totalHits         3
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"b": false}}
+    Integer     response status     200
+    Integer     $.totalHits         2
+ 
 Delete the index
     Set Headers  ${appheader}
     DELETE      /1/indexes/testindex

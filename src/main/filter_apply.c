@@ -1,8 +1,27 @@
 #include "filter_apply.h"
+#include "farmhash-c.h"
 
 static void (*filter_callback[F_ERROR+1]) (struct sindex *in, struct filter *, 
              MDB_txn *txn, struct bmap *docs);
 
+static inline void bool_eq_filter(struct sindex *si, struct filter *f, 
+        MDB_txn *txn, struct bmap *docs) {
+    uint64_t bhid = IDPRIORITY(f->numval, f->s->i_priority);
+    f->fr_bmap = mbmap_load_bmap(txn, si->boolid2bmap_dbi, bhid);
+}
+
+static inline void str_eq_filter(struct sindex *si, struct filter *f, 
+        MDB_txn *txn, struct bmap *docs) {
+    // Make sure it is a facetted string, this should never happen though if parsing was done right
+    if (!f->s->is_facet) {
+        M_ERR("EQ operation on a non-facetted string");
+        dump_filter(f, 0);
+        return;
+    }
+    uint32_t facet_id = farmhash32(f->strval, strlen(f->strval));
+    uint64_t fhid = IDPRIORITY(facet_id, f->s->f_priority);
+    f->fr_bmap = mbmap_load_bmap(txn, si->facetid2bmap_dbi, fhid);
+}
 
 static inline void num_eq_filter(struct sindex *in, struct filter *f, 
         MDB_txn *txn, struct bmap *docs) {
@@ -34,6 +53,12 @@ static void eq_filter(struct sindex *in, struct filter *f, MDB_txn *txn, struct 
     switch (f->field_type) {
         case F_NUMBER:
             num_eq_filter(in, f, txn, docs);
+            break;
+        case F_STRING:
+            str_eq_filter(in, f, txn, docs);
+            break;
+        case F_BOOLEAN:
+            bool_eq_filter(in, f, txn, docs);
             break;
         default:
             M_ERR("Field type not support for EQ filter");
