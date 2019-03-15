@@ -3,7 +3,6 @@
 - [ ] Filtering
 - [ ] Facets
 - [ ] Aggregation
-- [ ] Advanced query syntax
 - [ ] Handle number arrays during indexing, only 1st number is indexed
 - [ ] Facet boost
 - [ ] Stress Test Framework
@@ -11,6 +10,7 @@
 ### TODO 1.0
 
 - [ ] WAL
+- [ ] Advanced query syntax
 - [ ] Simple SQL queries
 
 ### TODO 2.0
