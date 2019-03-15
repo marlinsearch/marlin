@@ -43,6 +43,7 @@ static void filter_children_free(struct filter *f) {
 void filter_free(struct filter *f) {
     filter_children_free(f);
     kv_destroy(f->children);
+    bmap_free(f->fr_bmap);
     free(f);
 }
 
@@ -367,10 +368,11 @@ void init_filters(void) {
     hash_operator("$lt", F_LT);
     hash_operator("$lte", F_LTE);
 
+    init_filter_callbacks();
 }
 
 void dump_filter(struct filter *f, int indent) {
-    char ind[256];
+    char ind[PATH_MAX];
     ind[0] = '\0';
     for (int i=0; i<indent; i++) {
         strcat(ind, "    ");
@@ -390,3 +392,16 @@ void dump_filter(struct filter *f, int indent) {
         dump_filter(kv_A(f->children, i), indent+1);
     }
 }
+
+/* Duplicates a filter and all its children */
+struct filter *filter_dup(const struct filter *f) {
+    struct filter *n = malloc(sizeof(struct filter));
+    memcpy(n, f, sizeof(struct filter));
+    kv_init(n->children);
+    for (int i = 0; i < kv_size(f->children); i++) {
+        struct filter *c = filter_dup(kv_A(f->children, i));
+        kv_push(struct filter *, n->children, c);
+    }
+    return n;
+}
+

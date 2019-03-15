@@ -751,7 +751,7 @@ static void index_load_settings(struct index *in) {
 }
 
 struct schema *get_field_schema(struct index *in, const char *key) {
-    if (UNLIKELY(!in->mapping) && !in->mapping->index_schema) {
+    if (UNLIKELY(!in->mapping) || !in->mapping->index_schema) {
         M_ERR("Mapping not set");
         return NULL;
     }

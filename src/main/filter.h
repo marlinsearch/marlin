@@ -42,6 +42,8 @@ struct filter *parse_filter(struct index *in, json_t *j);
 void filter_free(struct filter *f);
 void init_filters(void);
 void dump_filter(struct filter *f, int indent);
+void init_filter_callbacks(void);
+struct filter *filter_dup(const struct filter *f);
 
 #endif
 

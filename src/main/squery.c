@@ -8,6 +8,9 @@
 #include "docrank.h"
 #include "utils.h"
 #include "sindex.h"
+#include "filter.h"
+#include "filter_apply.h"
+#include "bmap.h"
 
 
 static struct squery_result *squery_result_new(struct query *q) {
@@ -285,6 +288,26 @@ static inline int sort_results(struct query *q, struct docrank *ranks, uint32_t 
     return (sortcnt < resultcount) ? sortcnt : resultcount;
 }
 
+static void squery_apply_filters(struct squery *sq) {
+    struct sindex *si = sq->shard->sindex;
+    struct filter *sf = filter_dup(sq->q->filter);
+    struct bmap *fb = filter_apply(si, sf, sq->txn, sq->sqres->docid_map);
+    if (fb) {
+        /* If we have a result after applying filters, update docid_map
+         * with documents matching the filter */
+        struct bmap *fdocs = bmap_and(fb, sq->sqres->docid_map);
+        bmap_free(sq->sqres->docid_map);
+        sq->sqres->docid_map = fdocs;
+    } else {
+        /* If we have no matches, set an empty bitmap for this result */
+        bmap_free(sq->sqres->docid_map);
+        sq->sqres->docid_map = bmap_new();
+    }
+    dump_filter(sf, 0);
+    // Free the duplicated shard filter
+    filter_free(sf);
+}
+
 void execute_squery(void *w) {
     struct timeval start;
     struct squery *sq = w;
@@ -314,7 +337,11 @@ void execute_squery(void *w) {
     }
     trace_query("Lookup documents in", &start);
 
-    // TODO: Apply filters
+    // Apply filters
+    if (sq->q->filter) {
+        squery_apply_filters(sq);
+    }
+    trace_query("Applied filters in", &start);
 
     sq->sqres->num_hits = bmap_cardinality(sq->sqres->docid_map);
 
