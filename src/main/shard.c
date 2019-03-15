@@ -49,7 +49,7 @@ void shard_add_documents(struct shard *s, json_t *j) {
 }
 
 struct bmap *shard_get_all_docids(struct shard *s) {
-    return s->sdata->used_bmap;
+    return bmap_duplicate(s->sdata->used_bmap);
 }
 
 void shard_free(struct shard *s) {

@@ -38,6 +38,7 @@ void bitset_cont_inplace_union(struct cont *a, const struct cont *b);
 uint32_t cont_and_cardinality(const struct cont *a, const struct cont *b);
 uint16_t *cont_duplicate(const struct cont *c);
 bool cont_exists(const struct cont *c, uint16_t item);
+void cont_invert(struct cont *c, const struct cont *input);
 
 void bitset_cont_cardinality(struct cont *c);
 uint16_t cont_get_first(const struct cont *c);

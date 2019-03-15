@@ -56,7 +56,7 @@ Test query num eq filter
     Integer     $.totalHits         3
 
 Test query num eq non matching filter
-    POST         /1/indexes/testindex/query  {"q": "", "filter": {"n": 500}}
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"n": 7}}
     Integer     response status     200
     Integer     $.totalHits         0
 
@@ -76,7 +76,7 @@ Test query str eq non matching filter
     Integer     response status     200
     Integer     $.totalHits         0
 
- Test query bool eq filter
+Test query bool eq filter
     POST         /1/indexes/testindex/query  {"q": "", "filter": {"b": true}}
     Integer     response status     200
     Integer     $.totalHits         3
@@ -84,6 +84,37 @@ Test query str eq non matching filter
     Integer     response status     200
     Integer     $.totalHits         2
  
+Test query num ne filter
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"nl": {"$ne": 5}}}
+    Integer     response status     200
+    Integer     $.totalHits         2
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"n": {"$ne": 1}}}
+    Integer     response status     200
+    Integer     $.totalHits         4
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"n": {"$ne": 7}}}
+    Integer     response status     200
+    Integer     $.totalHits         5
+
+Test query str ne filter
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"fl": {"$ne": "uuu"}}}
+    Integer     response status     200
+    Integer     $.totalHits         4
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"f": {"$ne": "aaa"}}}
+    Integer     response status     200
+    Integer     $.totalHits         4
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"f": {"$ne": "blah"}}}
+    Integer     response status     200
+    Integer     $.totalHits         5
+ 
+Test query bool ne filter
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"b": {"$ne": true}}}
+    Integer     response status     200
+    Integer     $.totalHits         2
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"b": {"$ne": false}}}
+    Integer     response status     200
+    Integer     $.totalHits         3
+ 
+
 Delete the index
     Set Headers  ${appheader}
     DELETE      /1/indexes/testindex

@@ -1,5 +1,6 @@
 #include "filter_apply.h"
 #include "farmhash-c.h"
+#include "debug.h"
 
 static void (*filter_callback[F_ERROR+1]) (struct sindex *in, struct filter *, 
              MDB_txn *txn, struct bmap *docs);
@@ -46,6 +47,10 @@ static inline void num_eq_filter(struct sindex *in, struct filter *f,
         }
     }
     mdb_cursor_close(cursor);
+    if (f->fr_bmap->num_c == 0) {
+        bmap_free(f->fr_bmap);
+        f->fr_bmap = NULL;
+    }
 }
 
 /* Equal filter, based on filter field type choose appropriate filter */
@@ -63,6 +68,18 @@ static void eq_filter(struct sindex *in, struct filter *f, MDB_txn *txn, struct 
         default:
             M_ERR("Field type not support for EQ filter");
             break;
+    }
+}
+
+/* Not Equal filter Invert results of a eq filter with matching docids */
+static void ne_filter(struct sindex *in, struct filter *f, MDB_txn *txn, struct bmap *docs) {
+    eq_filter(in, f, txn, docs);
+    if (!f->fr_bmap) {
+        f->fr_bmap = bmap_duplicate(docs);
+    } else {
+        struct bmap *b = bmap_invert(f->fr_bmap, docs);
+        bmap_free(f->fr_bmap);
+        f->fr_bmap = b;
     }
 }
 
@@ -86,5 +103,6 @@ struct bmap *filter_apply(struct sindex *in, struct filter *f, MDB_txn *txn, str
 
 void init_filter_callbacks(void) {
     filter_callback[F_EQ] = eq_filter;
+    filter_callback[F_NE] = ne_filter;
     filter_callback[F_ERROR] = error_filter;
 }

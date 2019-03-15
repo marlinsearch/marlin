@@ -26,6 +26,7 @@ uint32_t bmap_get_dumplen(const struct bmap *b);
 void bmap_dump(const struct bmap *b, uint16_t *buf); // Dump to buf
 void bmap_load(struct bmap *b, const uint16_t *buf); // Load from buf
 bool bmap_exists(const struct bmap *b, uint32_t item);
+struct bmap *bmap_invert(const struct bmap *b, const struct bmap *input);
 
 struct oper {
     int count;

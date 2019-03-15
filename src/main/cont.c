@@ -532,3 +532,13 @@ bool cont_exists(const struct cont *c, uint16_t item) {
         return exists_bitset(c,item);
     }
 }
+
+void cont_invert(struct cont *c, const struct cont *input) {
+    for (int i=2; i<CUTOFF+2; i++) {
+        if (input->buffer[i]) {
+            c->buffer[i] &=  ~(c->buffer[i] & input->buffer[i]);
+        }
+    }
+    bitset_cont_cardinality(c);
+}
+
