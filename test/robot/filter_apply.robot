@@ -114,6 +114,26 @@ Test query bool ne filter
     Integer     response status     200
     Integer     $.totalHits         3
  
+Test query or filter
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"n": {"$or": [1,5]}}}
+    Integer     response status     200
+    Integer     $.totalHits         2
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"$or": [{"n": 2}, {"n": 4}]}}
+    Integer     response status     200
+    Integer     $.totalHits         2
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"$or": [{"n": 100}, {"n": 200}]}}
+    Integer     response status     200
+    Integer     $.totalHits         0
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"$or": [{"n": 3}, {"n": 200}]}}
+    Integer     response status     200
+    Integer     $.totalHits         1
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"$or": [{"n": 3}, {"n": 200}, {"b": false}]}}
+    Integer     response status     200
+    Integer     $.totalHits         3
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"f": {"$or": ["aaa", "bbb"]}}}
+    Integer     response status     200
+    Integer     $.totalHits         2
+ 
 
 Delete the index
     Set Headers  ${appheader}

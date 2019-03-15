@@ -83,6 +83,20 @@ static void ne_filter(struct sindex *in, struct filter *f, MDB_txn *txn, struct 
     }
 }
 
+/* or filter applies or on all child filters */
+static void or_filter(struct sindex *si, struct filter *f, MDB_txn *txn, struct bmap *docs) {
+    struct oper *bso = oper_new();
+    for (int i = 0; i < kv_size(f->children); i++) {
+        struct filter *c = kv_A(f->children, i);
+        if (c->fr_bmap) {
+            oper_add(bso, c->fr_bmap);
+        }
+    }
+    f->fr_bmap = oper_or(bso);
+    oper_free(bso);
+}
+
+
 static void error_filter(struct sindex *in, struct filter *f, MDB_txn *txn, struct bmap *docs) {
     M_ERR("Filters should not be applied for error filters !");
     assert(0);
@@ -104,5 +118,6 @@ struct bmap *filter_apply(struct sindex *in, struct filter *f, MDB_txn *txn, str
 void init_filter_callbacks(void) {
     filter_callback[F_EQ] = eq_filter;
     filter_callback[F_NE] = ne_filter;
+    filter_callback[F_OR] = or_filter;
     filter_callback[F_ERROR] = error_filter;
 }
