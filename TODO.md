@@ -1,14 +1,15 @@
 ### TODO 0.1
 
-- [ ] Filtering
+- [x] Filtering
 - [ ] Facets
-- [ ] Aggregation
+- [ ] Sorting / Ranking by numeric value
 - [ ] Handle number arrays during indexing, only 1st number is indexed
 - [ ] Facet boost
 - [ ] Stress Test Framework
 
 ### TODO 1.0
 
+- [ ] Aggregation
 - [ ] WAL
 - [ ] Advanced query syntax
 - [ ] Simple SQL queries
