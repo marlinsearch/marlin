@@ -15,7 +15,7 @@ typedef enum filter_type {
     F_GTE, // Greater than equals
     F_LT, // Lesser than
     F_LTE, // Lesser than equals
-    F_NUMCMP, //Number comparison
+    F_RANGE, // Numeric range comparison
     F_ERROR // Error occured while parsing
 } FILTER_TYPE;
 

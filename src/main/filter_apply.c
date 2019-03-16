@@ -173,7 +173,7 @@ static void num_filter(struct sindex *si, struct filter *f, MDB_txn *txn, struct
     mdb_cursor_close(cursor);
 }
 
-static void num_cmp_filter(struct sindex *si, struct filter *f, MDB_txn *txn, struct bmap *docs) {
+static void num_range_filter(struct sindex *si, struct filter *f, MDB_txn *txn, struct bmap *docs) {
     if (f->field_type != F_NUMBER) return;
 
     f->fr_bmap = bmap_new();
@@ -228,6 +228,6 @@ void init_filter_callbacks(void) {
     filter_callback[F_GTE] = num_filter;
     filter_callback[F_LT] = num_filter;
     filter_callback[F_LTE] = num_filter;
-    filter_callback[F_NUMCMP] = num_cmp_filter;
+    filter_callback[F_RANGE] = num_range_filter;
     filter_callback[F_ERROR] = error_filter;
 }

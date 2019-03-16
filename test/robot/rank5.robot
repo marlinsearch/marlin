@@ -48,7 +48,6 @@ Test an empty query
 Test query test
     Set Headers  ${appheader}
     POST         /1/indexes/testindex/query  {"q": "a new hope", "explain": true}
-    Output
     Integer     response status     200
 
 Delete the index

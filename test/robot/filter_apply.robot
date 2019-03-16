@@ -134,6 +134,62 @@ Test query or filter
     Integer     response status     200
     Integer     $.totalHits         2
  
+Test query and filter
+    POST         /1/indexes/testindex/query  {"q": "", "filter": {"n": {"$and": [1,5]}}}
+    Integer     $.totalHits         0
+    POST         /1/indexes/testindex/query  {"filter": {"$and": [{"n": 3}, {"nl": 3}, {"b": false}]}}
+    Integer     $.totalHits         0
+    POST         /1/indexes/testindex/query  {"filter": {"$and": [{"n": 3}, {"nl": 3}, {"b": true}]}}
+    Integer     $.totalHits         1
+    POST         /1/indexes/testindex/query  {"filter": {"nl": [3,4]}}
+    Integer     $.totalHits         2
+
+Test query gt filter
+    POST         /1/indexes/testindex/query  {"filter": {"n": {"$gt": 100}}}
+    Integer     $.totalHits         0
+    POST         /1/indexes/testindex/query  {"filter": {"n": {"$gt": 0}}}
+    Integer     $.totalHits         5
+    POST         /1/indexes/testindex/query  {"filter": {"nl": {"$gt": 3}}}
+    Integer     $.totalHits         4
+    POST         /1/indexes/testindex/query  {"filter": {"nl": {"$gt": 4}}}
+    Integer     $.totalHits         3
+
+ Test query gte filter
+    POST         /1/indexes/testindex/query  {"filter": {"n": {"$gte": 100}}}
+    Integer     $.totalHits         0
+    POST         /1/indexes/testindex/query  {"filter": {"n": {"$gte": 0}}}
+    Integer     $.totalHits         5
+    POST         /1/indexes/testindex/query  {"filter": {"nl": {"$gte": 3}}}
+    Integer     $.totalHits         5
+    POST         /1/indexes/testindex/query  {"filter": {"nl": {"$gte": 4}}}
+    Integer     $.totalHits         4
+
+ Test query lt filter
+    POST         /1/indexes/testindex/query  {"filter": {"n": {"$lt": 100}}}
+    Integer     $.totalHits         5
+    POST         /1/indexes/testindex/query  {"filter": {"n": {"$lt": 0}}}
+    Integer     $.totalHits         0
+    POST         /1/indexes/testindex/query  {"filter": {"nl": {"$lt": 3}}}
+    Integer     $.totalHits         2
+    POST         /1/indexes/testindex/query  {"filter": {"nl": {"$lt": 4}}}
+    Integer     $.totalHits         3
+
+ Test query lte filter
+    POST         /1/indexes/testindex/query  {"filter": {"n": {"$lte": 100}}}
+    Integer     $.totalHits         5
+    POST         /1/indexes/testindex/query  {"filter": {"n": {"$lte": 1}}}
+    Integer     $.totalHits         1
+    POST         /1/indexes/testindex/query  {"filter": {"nl": {"$lte": 3}}}
+    Integer     $.totalHits         3
+    POST         /1/indexes/testindex/query  {"filter": {"nl": {"$lte": 4}}}
+    Integer     $.totalHits         4
+
+ Test query range filter
+    POST         /1/indexes/testindex/query  {"filter": {"n": {"$gt": 1, "$lt": 3}}}
+    Integer     $.totalHits         1
+    POST         /1/indexes/testindex/query  {"filter": {"n": {"$gte": 1, "$lte": 3}}}
+    Integer     $.totalHits         3
+ 
 
 Delete the index
     Set Headers  ${appheader}

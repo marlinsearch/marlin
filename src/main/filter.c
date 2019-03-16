@@ -13,7 +13,7 @@ const char *filter_str[] = {
     "F_GTE", // Greater than equals
     "F_LT", // Lesser than
     "F_LTE", // Lesser than equals
-    "F_NUMCMP", // num comparison
+    "F_RANGE", // range comparison
     "F_ERROR" // Error occured while parsing
 };
 
@@ -133,7 +133,7 @@ static struct filter *parse_schema_key_json(const struct schema *s, const char *
         return f;
     }
     if ((f->type == F_GT) || (f->type == F_GTE) || (f->type == F_LT) || (f->type == F_LTE)) {
-        if (s->type != F_NUMBER) {
+        if (s->type != F_NUMBER && s->type != F_NUMLIST) {
             // It has to be a number
             f->type = F_ERROR;
             snprintf(f->error, sizeof(f->error), "Invalid operator %s specified for field %s", key, s->fname);
@@ -207,13 +207,14 @@ static struct filter *parse_schema_object(const struct schema *s, json_t *json) 
 
             kv_push(struct filter *, f->children, c);
         }
-        if (f->type == F_AND && f->field_type == F_NUMBER && kv_size(f->children) == 2) {
+        if (f->type == F_AND && (f->field_type == F_NUMBER || f->field_type == F_NUMLIST) &&
+                kv_size(f->children) == 2) {
             // Optimize this case
             if (kv_A(f->children, 0)->type == F_AND || kv_A(f->children, 1) == F_AND) {
                 f->type = F_ERROR;
                 snprintf(f->error, sizeof(f->error), "Invalid and operation for numeric filter %s", key);
             } else {
-                f->type = F_NUMCMP;
+                f->type = F_RANGE;
                 f->s = s;
                 filter_children_free(f);
             }
