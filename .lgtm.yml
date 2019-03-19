@@ -1,7 +1,7 @@
 path_classifiers:
-    test:
-        - src/
-        - exclude: src/utils
+    library:
+        - deps/
+        - src/utils
 extraction:
     cpp:
         index:
