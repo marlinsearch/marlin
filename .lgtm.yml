@@ -1,0 +1,9 @@
+path_classifiers:
+    test:
+        - src/
+        - exclude: src/utils
+extraction:
+    cpp:
+        index:
+            build_command:
+                - make
