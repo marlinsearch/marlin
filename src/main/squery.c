@@ -11,13 +11,28 @@
 #include "filter.h"
 #include "filter_apply.h"
 #include "bmap.h"
+#include "ksort.h"
 
+#define facet_gt(a, b) ((a).count > (b).count)
+KSORT_INIT(facet_sort, facet_count_t, facet_gt)
 
 static struct squery_result *squery_result_new(struct query *q) {
     struct squery_result *sqres = calloc(1, sizeof(struct squery_result));
     sqres->exact_docid_map = calloc(q->num_words, sizeof(struct bmap *));
     sqres->all_wordids = kh_init(WID2TYPOS);
     return sqres;
+}
+
+static struct facet_hash *init_facet_hash(struct index *in, struct query_cfg *cfg) {
+    struct facet_hash *fh = malloc(in->mapping->num_facets * sizeof(struct facet_hash));
+    for (int i = 0; i < in->mapping->num_facets; i++) {
+        if (cfg->facet_enabled[i]) {
+            fh[i].h = hashtable_new(1024);
+        } else {
+            fh[i].h = NULL;
+        }
+    }
+    return fh;
 }
 
 static struct bmap *get_twid_to_docids(struct squery *sq, struct sindex *si, uint32_t twid) {
@@ -266,6 +281,12 @@ void sqresult_free(struct query *q, struct squery_result *sqres) {
     kh_destroy(WID2TYPOS, sqres->all_wordids);
     free(sqres->exact_docid_map);
     free(sqres->ranks);
+    for (int i = 0; i < q->in->mapping->num_facets; i++) {
+        hashtable_free(sqres->fh[i].h);
+        free(sqres->fc[i]);
+    }
+    free(sqres->fc);
+    free(sqres->fh);
     free(sqres);
 }
 
@@ -308,6 +329,43 @@ static void squery_apply_filters(struct squery *sq) {
     filter_free(sf);
 }
 
+static struct facet_count **sort_facets(struct squery *sq) {
+    struct mapping *m = sq->q->in->mapping;
+    struct facet_count **fc = calloc(m->num_facets, sizeof(struct facet_count *));
+
+    // Iterate all facets and set final facet counts
+    for (int i = 0; i < m->num_facets; i++) {
+        if (!sq->q->cfg.facet_enabled[i]) continue;
+        // Get the result hashtable holding all facets and counts
+        struct hashtable *h = sq->sqres->fh[i].h;
+        fc[i] = malloc(sizeof(struct facet_count) * h->m_population);
+        int j = 0;
+        // Lookup all hashtable cells and set facet-id and counts
+        for (int x=0; x<h->m_arraySize; x++) {
+            if (h->m_cells[x].key) {
+                fc[i][j].facet_id = h->m_cells[x].key;
+                fc[i][j].count = h->m_cells[x].value;
+                j++;
+            }
+        }
+
+        int rcount = sq->q->cfg.max_facet_results;
+        // If we have too many facet results, partial sort to count required
+        if (h->m_population > sq->q->cfg.max_facet_results) {
+            ks_partialsort(facet_sort, fc[i], 0, h->m_population-1, sq->q->cfg.max_facet_results);
+        } else {
+            rcount = h->m_population;
+        }
+
+        // Set shard_id for necessary results
+        for (int x = 0; x < rcount; x++) {
+            fc[i][x].shard_id = sq->shard_idx;
+        }
+
+    }
+    return fc;
+}
+
 void execute_squery(void *w) {
     struct timeval start;
     struct squery *sq = w;
@@ -345,11 +403,18 @@ void execute_squery(void *w) {
 
     sq->sqres->num_hits = bmap_cardinality(sq->sqres->docid_map);
 
+    sq->sqres->fh = init_facet_hash(sq->q->in, &sq->q->cfg);
+
     // Perform ranking
     uint32_t resultcount = sq->sqres->num_hits;
     struct docrank *ranks = perform_ranking(sq, sq->sqres->docid_map, &resultcount);
     trace_query("Ranks calculated in", &start);
     //dump_bmap(sq->sqres->docid_map);
+
+    // Sort facet results
+    sq->sqres->fc = sort_facets(sq);
+    trace_query("Facets sorted in", &start);
+    
     sq->sqres->rank_count = sort_results(sq->q, ranks, resultcount);
     trace_query("Ranks sorted in", &start);
     sq->sqres->ranks = ranks;

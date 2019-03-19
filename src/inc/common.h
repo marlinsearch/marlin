@@ -112,6 +112,9 @@
 #define J_R_TOOK          "took"
 #define J_R_PAGE          "page"
 #define J_R_NUMPAGES      "numPages"
+#define J_R_COUNT         "count"
+#define J_R_KEY           "key"
+#define J_R_FACETS        "facets"
 
 #endif
 

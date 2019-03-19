@@ -493,7 +493,7 @@ static inline void deindex_boolean(struct sindex *si, int priority, bool b) {
  * the facetid to a bmap of docids which contain this facet.  It also stores this facetid
  * in the per document index data
  */
-static inline void index_string_facet(struct sindex *si, const char *str, int priority) {
+static void index_string_facet(struct sindex *si, const char *str, int priority) {
     // Facetid is a 32 bit farmhash of the string to be indexed
     // TODO: Collisions ? Use different seed?
     // TODO: Maintain a hashtable for a bulk write instead of hashing everytime wit farmhash?
@@ -531,7 +531,7 @@ static inline void index_string_facet(struct sindex *si, const char *str, int pr
                          facet_id, od->docid, priority);
 }
 
-static inline void deindex_string_facet(struct sindex *si, const char *str, int priority) {
+static void deindex_string_facet(struct sindex *si, const char *str, int priority) {
     // Facetid is a 32 bit farmhash of the string to be indexed
     // TODO: Collisions ? Use different seed?
     // TODO: Maintain a hashtable for a bulk write instead of hashing everytime wit farmhash?
@@ -541,6 +541,19 @@ static inline void deindex_string_facet(struct sindex *si, const char *str, int 
     wid2bmap_remove(si->facetid2bmap_dbi, si->wc->kh_facetid2bmap, si->txn, 
                          facet_id, od->docid, priority);
 }
+
+static void index_number_facet(struct sindex *si, double d, int priority) {
+    char numstr[32];
+    snprintf(numstr, sizeof(numstr), "%f", d);
+    index_string_facet(si, numstr, priority);
+}
+
+static void deindex_number_facet(struct sindex *si, double d, int priority) {
+    char numstr[32];
+    snprintf(numstr, sizeof(numstr), "%f", d);
+    deindex_string_facet(si, numstr, priority);
+}
+
 
 static void string_new_word_pos(word_pos_t *wp, void *data) {
     struct analyzer_data *ad = data;
@@ -721,6 +734,9 @@ static void parse_index_document(struct sindex *si, struct schema *s, json_t *j)
                 if (s->is_indexed) {
                     index_number(si, s->i_priority, d);
                 }
+                if (s->is_facet) {
+                    index_number_facet(si, d, s->f_priority);
+                }
             }
             break;
             case F_NUMLIST: {
@@ -731,11 +747,14 @@ static void parse_index_document(struct sindex *si, struct schema *s, json_t *j)
                 json_array_foreach(jarr, jid, jn) {
                     if (!json_is_number(jn)) continue;
                     double d = json_number_value(jn);
+                    // TODO: Decide on how to store arrays in docdata and index
+                    // Probably the same way we handle facets?
                     if (s->is_indexed) {
                         index_number(si, s->i_priority, d);
                     }
-                    // TODO: Decide on how to store arrays in docdata and index
-                    // Probably the same way we handle facets?
+                    if (s->is_facet) {
+                        index_number_facet(si, d, s->f_priority);
+                    }
                 }
             }
             break;
@@ -819,6 +838,9 @@ static void parse_deindex_document(struct sindex *si, struct schema *s, const js
                 if (s->is_indexed) {
                     deindex_number(si, s->i_priority, d);
                 }
+                if (s->is_facet) {
+                    deindex_number_facet(si, d, s->f_priority);
+                }
             }
             break;
             case F_NUMLIST: {
@@ -829,11 +851,14 @@ static void parse_deindex_document(struct sindex *si, struct schema *s, const js
                 json_array_foreach(jarr, jid, jn) {
                     if (!json_is_number(jn)) continue;
                     double d = json_number_value(jn);
+                    // TODO: Decide on how to store arrays in docdata and index
+                    // Probably the same way we handle facets?
                     if (s->is_indexed) {
                         deindex_number(si, s->i_priority, d);
                     }
-                    // TODO: Decide on how to store arrays in docdata and index
-                    // Probably the same way we handle facets?
+                    if (s->is_facet) {
+                        deindex_number_facet(si, d, s->f_priority);
+                    }
                 }
             }
             break;
@@ -915,6 +940,21 @@ static void si_remove_docdata(struct sindex *si) {
         kv_destroy(od->facet_data[i]);
     }
 }
+
+char *sindex_lookup_facet(struct sindex *si, uint32_t facet_id) {
+    MDB_txn *txn;
+    char *fstr = NULL;
+    mdb_txn_begin(si->env, NULL, MDB_RDONLY, &txn);
+    MDB_val key, data;
+    key.mv_size = sizeof(uint32_t);
+    key.mv_data = &facet_id;
+    if (mdb_get(txn, si->facetid2str_dbi, &key, &data) == 0) {
+        fstr = strdup((char *) data.mv_data);
+    }
+    mdb_txn_abort(txn);
+    return fstr;
+}
+
 
 void si_delete_document(struct sindex *si, const json_t *j, uint32_t docid) {
     si->wc->od.docid = docid;

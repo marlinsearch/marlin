@@ -4,6 +4,10 @@
 #include "utils.h"
 #include "filter.h"
 #include "debug.h"
+#include "hashtable.h"
+
+#define facetgt(a, b) ((a).count > (b).count)
+KSORT_INIT(facetsort, facet_count_t, facetgt)
 
 static void term_free(term_t *t) {
     wordfree(t->word);
@@ -30,13 +34,124 @@ static void explain_rank(struct query *q, json_t *j, struct docrank *r) {
     json_object_set_new(j, "_explain", e);
 }
 
+static struct facet_count *process_facet_results(struct squery *sq, int f, int *count) {
+    struct query *q = sq[0].q;
+    struct facet_count *fc;
+    int rcount = 0;
+    // This is a simpler case, when we have a single shard, Just
+    // sort the result count and return
+    if (q->in->num_shards == 1) {
+        struct hashtable *h = sq[0].sqres->fh[f].h;
+        if (h->m_population > q->cfg.max_facet_results) {
+            // We have already partially sorted to max_facet_results
+            // we just need to sort the top n results.
+            rcount = q->cfg.max_facet_results;
+        } else {
+            rcount = h->m_population;
+        }
+        ks_introsort(facetsort, rcount, sq[0].sqres->fc[f]);
+        fc = sq[0].sqres->fc[f];
+        *count = rcount;
+        return fc;
+    }
+    // Merge results use a hashtable to store position in a 
+    // preallocated fc array.
+    // Allocate an array big enough to handle the worst case scenario
+    fc = malloc(sizeof(struct facet_count) * q->in->num_shards * q->cfg.max_facet_results);
+    struct hashtable *h = hashtable_new(q->cfg.max_facet_results * q->in->num_shards * 2);
+    for (int i = 0; i < q->in->num_shards; i++) {
+        struct squery_result *sqres = sq[i].sqres;
+        int size;
+        if (sqres->fh[f].h->m_population > q->cfg.max_facet_results) {
+            size = q->cfg.max_facet_results;
+        } else {
+            size = sqres->fh[f].h->m_population;
+        }
+        for (int j = 0; j < size; j++) {
+            struct facet_count *ifc = &sqres->fc[f][j];
+            struct cell *c;
+            // If we already have this facet stored in the array, update its value
+            if ((c = hashtable_lookup(h, ifc->facet_id)) != NULL) {
+                fc[c->value].count += ifc->count;
+            } else {
+                c = hashtable_insert(h, ifc->facet_id);
+                memcpy(&fc[rcount], ifc, sizeof(struct facet_count));
+                c->value = rcount;
+                rcount++;
+            }
+        }
+    }
+    // Now sort the results
+    ks_introsort(facetsort, rcount, fc);
+    if (rcount > q->cfg.max_facet_results) {
+        rcount = q->cfg.max_facet_results;
+    }
+    *count = rcount;
+    hashtable_free(h);
+    return fc;
+}
+
+static json_t *form_facet_result(struct query *q, struct squery *sq, F_TYPE type, int f) {
+    json_t *ja = json_array();
+    int count;
+
+    struct facet_count *fc = process_facet_results(sq, f, &count);
+    for (int i = 0; i < count; i++) {
+        // Retrieve the actual facet string from the shard
+        struct shard *s = kv_A(q->in->shards, fc[i].shard_id);
+        char *fstr = sindex_lookup_facet(s->sindex, fc[i].facet_id);
+        // This should never happen
+        if (!fstr) {
+            M_ERR("Failed to lookup facet for facet_id %u on shard %d\n", fc->facet_id, fc->shard_id);
+            continue; 
+        }
+        // Based on type set the correct key with the correct type
+        json_t *jf = json_object();
+        json_object_set_new(jf, J_R_COUNT, json_integer(fc[i].count));
+        switch (type) {
+            case F_STRING:
+            case F_STRLIST:
+                json_object_set_new(jf, J_R_KEY, json_string(fstr));
+                break;
+            case F_NUMBER:
+            case F_NUMLIST:
+                json_object_set_new(jf, J_R_KEY, json_real(atof(fstr)));
+                break;
+            default:
+                break;
+        }
+        free(fstr);
+        json_array_append_new(ja, jf);
+    }
+
+    // If number of shards was more, we used a temp list to merge the results,
+    // free it
+    if (q->in->num_shards > 1) {
+        free(fc);
+    }
+
+    return ja;
+}
+
+static json_t *get_facet_results(struct query *q, struct squery *sq) {
+    json_t *jf = json_object();
+    for (int i = 0; i < q->in->mapping->num_facets; i++) {
+        if (q->cfg.facet_enabled[i]) {
+            const struct facet_info *fi = get_facet_info(q->in->mapping, i);
+            json_t *ja = form_facet_result(q, sq, fi->type, i);
+            json_object_set_new(jf, fi->name, ja);
+        }
+    }
+    return jf;
+}
+
 static json_t *form_result(struct query *q, struct squery *sq) {
     json_t *j = json_object();
     // Process response within shardquery
     int total_hits = 0;
     int total_ranks = 0;
     for (int i = 0; i < q->in->num_shards; i++) {
-        M_DBG("Num hits from shard %d is %d", i, sq[i].sqres->num_hits);
+        M_DBG("Num hits from shard %d is %lu", i, sq[i].sqres->num_hits);
         total_hits += sq[i].sqres->num_hits;
         total_ranks += sq[i].sqres->rank_count;
     }
@@ -99,7 +214,11 @@ static json_t *form_result(struct query *q, struct squery *sq) {
             free(o);
         }
     }
- 
+
+    json_t *jf = get_facet_results(q, sq);
+    if (jf) {
+        json_object_set_new(j, J_R_FACETS, jf);
+    }
 
     if (q->in->num_shards > 1) {
         free(ranks);

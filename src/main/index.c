@@ -62,10 +62,21 @@ void index_worker_add_documents(struct index *in, json_t **sh_j) {
     free(sh_add);
 }
 
+static void index_apply_config(struct index *in) {
+    struct query_cfg *qcfg = in->cfg.qcfg;
+    free(qcfg->facet_enabled);
+    qcfg->facet_enabled = malloc(sizeof(int) * in->mapping->num_facets);
+    for (int i = 0; i < in->mapping->num_facets; i++) {
+        qcfg->facet_enabled[i] = 1;
+    }
+
+}
+
 static void update_shard_mappings(struct index *in) {
     for (int i=0; i < kv_size(in->shards); i++) {
         shard_set_mapping(kv_A(in->shards, i), in->mapping);
     }
+    index_apply_config(in);
 }
 
 /* When documents are added to an index, they may have to be parsed for schema
@@ -920,6 +931,10 @@ struct index *index_new(const char *name, struct app *a, int num_shards) {
         kv_push(struct shard*, in->shards, s);
     }
 
+    if (in->mapping->ready_to_index) {
+        update_shard_mappings(in);
+    }
+
     // Register the handlers for the app
     setup_index_handlers(in, a->appid, a->apikey, true);
 
@@ -946,6 +961,11 @@ static void free_kvec_strings(void *kv) {
     kv_destroy(*fields);
 }
 
+static void free_query_cfg(struct query_cfg *qcfg) {
+    free(qcfg->facet_enabled);
+    free(qcfg);
+}
+
 void index_free(struct index *in) {
     // Deregister handlers for this app
     setup_index_handlers(in, in->app->appid, in->app->apikey, false);
@@ -964,7 +984,7 @@ void index_free(struct index *in) {
     }
     free_kvec_strings(&in->cfg.index_fields);
     free_kvec_strings(&in->cfg.facet_fields);
-    free(in->cfg.qcfg);
+    free_query_cfg(in->cfg.qcfg);
     free(in);
 }
 

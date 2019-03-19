@@ -105,6 +105,7 @@ void sindex_clear(struct sindex *si);
 void sindex_set_mapping(struct sindex *si, const struct mapping *map);
 void sindex_delete_document(struct sindex *si, const json_t *j, uint32_t docid);
 uint8_t *read_vint(uint8_t *buf, int *value);
+char *sindex_lookup_facet(struct sindex *si, uint32_t facet_id);
 
 #endif
 

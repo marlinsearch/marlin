@@ -417,12 +417,48 @@ static inline void perform_doc_rank(struct squery *sq, struct docrank *rank) {
     }
 }
 
+static inline void process_facet_result(struct squery *sq, uint8_t *pos) {
+    struct mapping *m = sq->q->in->mapping;
+    // calculate facet offset
+    size_t fo = m->num_numbers * sizeof(double);
+    // Get the facet position
+    uint8_t *fpos = pos + fo;
+    for (int i = 0; i < m->num_facets; i++) {
+        facets_t *f = (facets_t *)fpos;
+        // If facet is enabled, count it
+        if (sq->q->cfg.facet_enabled[i]) {
+            for (int j = 0; j < f->count; j++) {
+                struct cell *c = hashtable_insert(sq->sqres->fh[i].h, f->data[j]);
+                c->value += 1;
+            }
+        }
+        // Move to next facet
+        fpos += ((f->count * sizeof(uint32_t)) + sizeof(uint32_t));
+    }
+}
+
+static inline void perform_doc_processing(struct squery *sq, struct docrank *rank) {
+    MDB_val key, mdata;
+    key.mv_size = sizeof(uint32_t);
+    int rc;
+    key.mv_data = &rank->docid;
+    struct sindex *si = sq->shard->sindex;
+    if ((rc = mdb_get(sq->txn, si->docid2fndata_dbi, &key, &mdata)) == 0) {
+        // If we have any facets enabled, process that
+        if (sq->q->cfg.max_facet_results && sq->q->cfg.facet_enabled) {
+            process_facet_result(sq, mdata.mv_data);
+        }
+    }
+}
 
 static void setup_ranks(uint32_t val, void *rptr) {
     struct rank_iter *iter = rptr;
     struct docrank *rank = &iter->ranks[iter->rankpos++];
     rank->docid = val;
+    // Ranking is performed using document words / positions
     perform_doc_rank(iter->sq, rank);
+    // Further processing is done to handle facets / aggregations
+    perform_doc_processing(iter->sq, rank);
 }
 
 struct docrank *perform_ranking(struct squery *sq, struct bmap *docid_map, uint32_t *resultcount) {

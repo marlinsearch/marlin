@@ -6,6 +6,7 @@
 #include "word.h"
 #include "dtrie.h"
 #include "sort.h"
+#include "ksort.h"
 
 typedef enum prefix_type {
     PREFIX_LAST,
@@ -47,6 +48,8 @@ struct query_cfg {
     bool rank_sort;     // Sort by the field or use it to rank finally
     bool rank_asc;      // Rank by ascending or descending order
     SORT_RULE  rank_algo[R_MAX + 1]; // Ranking algorithm
+
+    int *facet_enabled;
 };
 
 struct query {

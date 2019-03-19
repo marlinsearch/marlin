@@ -66,5 +66,6 @@ void mapping_delete(struct mapping *m);
 char *mapping_to_json_str(const struct mapping *m);
 const char * type_to_str(F_TYPE type);
 struct schema *schema_find_field(struct schema *s, const char *name);
+const struct facet_info *get_facet_info(struct mapping *m, int facet_id);
 
 #endif

@@ -522,6 +522,14 @@ static void reset_field_kv(struct mapping *m, bool init) {
     m->num_bools = m->num_facets = m->num_strings = m->num_numbers = 0;
 }
 
+
+const struct facet_info *get_facet_info(struct mapping *m, int facet_id) {
+    if (facet_id < kv_size(m->facets)) {
+        return kv_A(m->facets, facet_id);
+    }
+    return NULL;
+}
+
 /* Once full schema is available, find out all fields specified in the 
  * configuration for index_fields and facet_fields and update data.  
  * Till this function returns true, indexing of data does not start
