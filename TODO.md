@@ -38,3 +38,7 @@
 - [ ] Two terms matching same word should discard the resulting document, if no other matching word is found
      Eg., "str" : "aaaaa this is nice" with query "aaaaa baaaa" should not match
 - [ ] Segfault when an instance of marlin is already running on configured port
+
+
+### In Progress
+Facets
