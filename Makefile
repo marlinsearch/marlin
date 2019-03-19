@@ -5,7 +5,9 @@
 RM    := rm -rf
 MKDIR := mkdir -p
 
-all: ./build/Makefile
+all: deps rel
+
+rel: ./build/Makefile
 	@ $(MAKE) -C build
 
 debug: ./build/Makefile-debug
@@ -29,10 +31,10 @@ clean:
 deps:
 	@ $(MAKE) -C deps
 
-marlin: all
+marlin: rel
 	@./build/main/marlin
 
-run: all
+run: rel
 	@./build/main/marlin
 
 rund: debug
@@ -48,7 +50,7 @@ callgrind: debug
 helgrind: debug
 	@valgrind --tool=helgrind -v ./build-debug/main/marlin
 
-testsetup: all
+testsetup: rel
 	@- $(RM) -rf ./db/acme/test/s_*
 	@  echo "Generating test data ..."
 	@  (cd test && python data_gen.py > test.json)
