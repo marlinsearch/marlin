@@ -10,6 +10,8 @@ make to build
 
 make run to run
 
+make debug to debug
+
 
 FOLDERS
 
