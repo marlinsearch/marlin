@@ -601,13 +601,13 @@ static char *index_get_document_callback(h2o_req_t *req, void *data) {
     char *id = parse_req_document_id(in, req);
     if (id) {
         int sid = get_shard_routing_id(id, in->num_shards);
-        char *data = shard_get_document(kv_A(in->shards, sid), id);
-        if (!data) {
+        char *doc = shard_get_document(kv_A(in->shards, sid), id);
+        if (!doc) {
             req->res.status = 404;
             req->res.reason = "Not Found";
-            data = strdup(J_FAILURE);
+            doc = strdup(J_FAILURE);
         }
-        resp = data;
+        resp = doc;
     } else {
         resp = strdup(J_FAILURE);
         goto send_response;
