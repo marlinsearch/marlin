@@ -2,6 +2,7 @@ path_classifiers:
     library:
         - deps/
         - src/utils
+        - exclude: src/utils/utils.c
 extraction:
     cpp:
         index:
