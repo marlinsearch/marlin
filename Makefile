@@ -5,10 +5,10 @@
 RM    := rm -rf
 MKDIR := mkdir -p
 
-all: deps rel
-
 rel: ./build/Makefile
 	@ $(MAKE) -C build
+
+all: deps rel
 
 debug: ./build/Makefile-debug
 	@ $(MAKE) -C build-debug

@@ -5,8 +5,6 @@
 #include "common.h"
 #include "index.h"
 
-#define MAX_FIELD_NAME 256
-
 typedef enum field_type {
     F_NULL,
     F_STRING,

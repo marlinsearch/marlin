@@ -44,6 +44,7 @@ struct query_cfg {
     uint16_t max_hits;
     uint16_t max_facet_results;
     int num_rules;
+    char rank_by_field[MAX_FIELD_NAME];
     int rank_by;   // Field on which ranking has to be performed
     bool rank_sort;     // Sort by the field or use it to rank finally
     bool rank_asc;      // Rank by ascending or descending order
