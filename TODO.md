@@ -1,16 +1,16 @@
 ### TODO 0.1
 
 - [x] Filtering
-- [ ] Facets
+- [x] Facets
+- [ ] Sorting / Ranking by numeric value
+- [ ] CRUD
+- [ ] Parial Scanning during queries
+- [ ] Stress Test Framework
 - [ ] Restrict facets
 - [ ] Get specific facets, instead of everything
 - [ ] Boolean Facets
-- [ ] Parial Scanning during queries
 - [ ] Mapping updates on reconfiguration
-- [ ] Sorting / Ranking by numeric value
-- [ ] CRUD
 - [ ] Python tests
-- [ ] Stress Test Framework
 
 ### TODO 0.2
 
