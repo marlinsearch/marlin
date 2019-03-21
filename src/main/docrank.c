@@ -437,6 +437,11 @@ static inline void process_facet_result(struct squery *sq, uint8_t *pos) {
     }
 }
 
+static inline double setup_rank_compare(int rank_by, void *pos) {
+    double *dpos = pos;
+    return dpos[rank_by];
+}
+
 static inline void perform_doc_processing(struct squery *sq, struct docrank *rank) {
     MDB_val key, mdata;
     key.mv_size = sizeof(uint32_t);
@@ -447,6 +452,10 @@ static inline void perform_doc_processing(struct squery *sq, struct docrank *ran
         // If we have any facets enabled, process that
         if (sq->q->cfg.max_facet_results && sq->q->cfg.facet_enabled) {
             process_facet_result(sq, mdata.mv_data);
+        }
+
+        if (LIKELY(sq->q->cfg.rank_by >= 0)) {
+            rank->compare = setup_rank_compare(sq->q->cfg.rank_by, mdata.mv_data);
         }
     }
 }

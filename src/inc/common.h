@@ -116,5 +116,10 @@
 #define J_R_KEY           "key"
 #define J_R_FACETS        "facets"
 
+#define ORDER_ASC           "asc"
+#define ORDER_DESC          "desc"
+#define MAX_FIELD_NAME 256
+
+
 #endif
 

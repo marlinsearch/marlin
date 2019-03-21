@@ -7,4 +7,4 @@ extraction:
     cpp:
         index:
             build_command:
-                - make
+                - make all

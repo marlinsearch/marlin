@@ -349,22 +349,64 @@ static int cfg_set_list_fields(void *data, json_t *ja) {
     return changed;
 }
 
-static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg) {
+static const char *cfg_set_rank_sort_field(struct query_cfg *qcfg, struct mapping *m, json_t *jo, bool sort) {
+    const char *key;
+    json_t *value;
+    qcfg->rank_sort = sort;
+
+    json_object_foreach(jo, key, value) {
+        if (json_is_string(value)) {
+            const char *dir = json_string_value(value);
+            if (strcmp(dir, ORDER_ASC) == 0) {
+                qcfg->rank_asc = true;
+            } else if (strcmp(dir, ORDER_DESC) == 0){
+                qcfg->rank_asc = false;
+            } else {
+                return "Invalid sort / rank direction specified";
+            }
+            // If we have a mapping use that to validate its ok
+            if (m) {
+                printf("sort field is %s\n", key);
+                struct schema *s = schema_find_field(m->index_schema->child, key);
+                if (!s) {
+                    return "The field to sort / rank by is not indexed";
+                }
+                if (s->type != F_NUMBER && s->type != F_NUMLIST) {
+                    return "The field to sort / rank by is not a number";
+                }
+                // Finally set the indexed field id / priority
+                qcfg->rank_by = s->i_priority;
+            }
+            // We do not have a mapping yet, just save the field name for now
+            snprintf(qcfg->rank_by_field, sizeof(qcfg->rank_by_field), "%s", key);
+        } else {
+            return "Invalid sort / rank direction specified";
+        }
+    }
+
+    return NULL;
+}
+
+static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg, struct mapping *m) {
     const char *key;
     json_t *value;
 
     // TODO: Validate settings are within limits.. eg., maxhits cannot be more than 1000
     // hitsperpage cannot be more than maxhits etc.,
     json_object_foreach(j, key, value) {
+        // hitsPerPage
         if (strcmp(J_S_HITS_PER_PAGE, key) == 0) {
             qcfg->hits_per_page = json_integer_value(value);
         }
+        // maxHits
         if (strcmp(J_S_MAX_HITS, key) == 0) {
             qcfg->max_hits = json_integer_value(value);
         }
+        // maxFacetResults
         if (strcmp(J_S_MAX_FACET_RESULTS, key) == 0) {
             qcfg->max_facet_results = json_integer_value(value);
         }
+        // rankAlgorithm
         if (strcmp(J_S_RANKALGO, key) == 0) {
             if (!json_is_array(value)) {
                 return "Rank algorithm needs to be an array";
@@ -382,6 +424,14 @@ static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg
                 qcfg->rank_algo[index] = r;
             }
             qcfg->num_rules = index;
+        }
+        // rankBy / sortBy
+        if (strcmp(J_S_RANK_BY, key) == 0) {
+            const char *err = cfg_set_rank_sort_field(qcfg, m, value, false);
+            if (err) return err;
+        } else  if (strcmp(J_S_SORT_BY, key) == 0) {
+            const char *err = cfg_set_rank_sort_field(qcfg, m, value, true);
+            if (err) return err;
         }
     }
     if (qcfg->hits_per_page > qcfg->max_hits) {
@@ -419,7 +469,7 @@ static int index_load_json_settings(struct index *in, json_t *j) {
         }
     }
 
-    const char *parse_fail = parse_query_settings(j, in->cfg.qcfg);
+    const char *parse_fail = parse_query_settings(j, in->cfg.qcfg, in->mapping);
     if (parse_fail) {
         M_ERR("Parse error : %s", parse_fail);
         return -1;
@@ -435,6 +485,7 @@ static int index_load_json_settings(struct index *in, json_t *j) {
 
 static char *index_settings_to_json(const struct index *in) {
     json_t *jo = json_object();
+    struct query_cfg *qcfg = in->cfg.qcfg;
     // set index fields
     json_t *ji = json_array();
     for (int i=0; i<kv_size(in->cfg.index_fields); i++) {
@@ -448,17 +499,24 @@ static char *index_settings_to_json(const struct index *in) {
     }
 
     json_object_set_new(jo, J_S_FACETFIELDS, jf);
-    json_object_set_new(jo, J_S_HITS_PER_PAGE, json_integer(in->cfg.qcfg->hits_per_page));
-    json_object_set_new(jo, J_S_MAX_HITS, json_integer(in->cfg.qcfg->max_hits));
-    json_object_set_new(jo, J_S_MAX_FACET_RESULTS, json_integer(in->cfg.qcfg->max_facet_results));
+    json_object_set_new(jo, J_S_HITS_PER_PAGE, json_integer(qcfg->hits_per_page));
+    json_object_set_new(jo, J_S_MAX_HITS, json_integer(qcfg->max_hits));
+    json_object_set_new(jo, J_S_MAX_FACET_RESULTS, json_integer(qcfg->max_facet_results));
     // Save rules
     json_t *jr = json_array();
     json_object_set_new(jo, J_S_RANKALGO, jr);
-    for (int i = 0; i < in->cfg.qcfg->num_rules; i++) {
-        const char *rstr = rule_to_rulestr(in->cfg.qcfg->rank_algo[i]);
+    for (int i = 0; i < qcfg->num_rules; i++) {
+        const char *rstr = rule_to_rulestr(qcfg->rank_algo[i]);
         if (rstr) {
             json_array_append_new(jr, json_string(rstr));
         }
+    }
+
+    // We have a rank / sort by field
+    if (qcfg->rank_by_field[0] != '\0') {
+        json_t *jr = json_object();
+        json_object_set_new(jr, qcfg->rank_by_field, json_string(qcfg->rank_asc ? ORDER_ASC : ORDER_DESC));
+        json_object_set_new(jo, qcfg->rank_sort ? J_S_SORT_BY : J_S_RANK_BY, jr);
     }
  
     char *resp = json_dumps(jo, JSON_PRESERVE_ORDER|JSON_INDENT(4));
@@ -677,7 +735,7 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
         memcpy(&q->cfg, in->cfg.qcfg, sizeof(struct query_cfg));
 
         // Parse query config overrides and other query info
-        const char *fail = parse_query_settings(jq, &q->cfg);
+        const char *fail = parse_query_settings(jq, &q->cfg, in->mapping);
         if (fail) {
             response = failure_message(fail);
             req->res.status = 400;
@@ -718,9 +776,21 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
             q->explain = json_is_true(je);
         }
 
-        // TODO: Update rank_rule with order once that is done
-        q->rank_rule[q->cfg.num_rules] = R_DONE;
-        memcpy(&q->rank_rule[0], q->cfg.rank_algo, q->cfg.num_rules * sizeof(SORT_RULE));
+        // Update rank_rule with rankBy or sortBy
+        int rcount = 0;
+        if (q->cfg.rank_by >= 0) {
+            if (q->cfg.rank_sort) {
+                q->rank_rule[0] = q->cfg.rank_asc ? R_COMP_ASC : R_COMP;
+                q->rank_rule[q->cfg.num_rules + 1] = R_DONE;
+                rcount++;
+            } else {
+                q->rank_rule[q->cfg.num_rules] = q->cfg.rank_asc ? R_COMP_ASC : R_COMP;
+                q->rank_rule[q->cfg.num_rules + 1] = R_DONE;
+            }
+        } else {
+            q->rank_rule[q->cfg.num_rules] = R_DONE;
+        }
+        memcpy(&q->rank_rule[rcount], q->cfg.rank_algo, q->cfg.num_rules * sizeof(SORT_RULE));
 
         const char *qstr = json_string_value(json_object_get(jq, J_QUERY));
         if (qstr) {
