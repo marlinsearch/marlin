@@ -437,8 +437,8 @@ static inline void process_facet_result(struct squery *sq, uint8_t *pos) {
     }
 }
 
-static inline double setup_rank_compare(int rank_by, uint8_t *pos) {
-    double *dpos = (double *)pos;
+static inline double setup_rank_compare(int rank_by, void *pos) {
+    double *dpos = pos;
     return dpos[rank_by];
 }
 
