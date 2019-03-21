@@ -2,14 +2,14 @@
 
 - [x] Filtering
 - [x] Facets
-- [ ] Sorting / Ranking by numeric value
+- [x] Sorting / Ranking by numeric value
 - [ ] CRUD
+- [ ] Mapping updates on reconfiguration
 - [ ] Parial Scanning during queries
 - [ ] Stress Test Framework
 - [ ] Restrict facets
 - [ ] Get specific facets, instead of everything
 - [ ] Boolean Facets
-- [ ] Mapping updates on reconfiguration
 - [ ] Python tests
 
 ### TODO 0.2
@@ -41,4 +41,11 @@
 
 
 ### In Progress
-Facets
+
+CRUD
+Python tests
+
+### Tests to complete
+
+- facet.robot
+- sort.robot
