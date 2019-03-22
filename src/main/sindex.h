@@ -69,8 +69,7 @@ struct sindex {
     MDB_dbi twid2widbmap_dbi;   // Top-level wid to bitmap of wids under the twid
     MDB_dbi twid2bmap_dbi;      // Top-level wid to bitmap of docids under the twid
     MDB_dbi wid2bmap_dbi;       // Word id to bitmap of docids containing that wid
-    MDB_dbi docid2fndata_dbi;     // docid to facet / numeric data 
-    MDB_dbi docid2wpos_dbi;       // docid to word freq, position data
+    MDB_dbi docid2data_dbi;     // docid to index data
     MDB_dbi phrase_dbi;         // Phrase query dbi, adjacent wids mapped to docids containing the pair
 #ifdef TRACK_WIDS
     MDB_dbi wid2chr_dbi;        //

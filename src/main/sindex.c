@@ -208,30 +208,38 @@ static inline void sindex_docdata_init(struct sindex *si) {
  * This is split from word position information as this will
  * mostly be used during large scale aggregations
  */
-static inline void store_facet_num_data(struct sindex *si, struct doc_data *od) {
+static void store_docdata(struct sindex *si, struct doc_data *od, uint8_t *wpdata, uint32_t len) {
     // Calculate storage size required to store the data
     // Start with size required to store numeric data
-    size_t size = si->map->num_numbers * sizeof(double);
+    size_t size = (si->map->num_numbers * sizeof(double)) + sizeof(uint32_t);
     // Add the facet data size
     size += (si->map->num_facets * sizeof(uint32_t));
     for (int i = 0; i < si->map->num_facets; i++) {
         size += (kv_size(od->facet_data[i]) * sizeof(uint32_t));
     }
 
+    size = (size + 7) & ~7;
+    size_t full_size = size + len;
+
     // Reserve space in lmdb to store this data
     MDB_val key,data;
     key.mv_size = sizeof(uint32_t);
     key.mv_data = &od->docid;
     data.mv_data = NULL;
-    data.mv_size = size;
+    data.mv_size = full_size;
 
-    if (mdb_put(si->txn, si->docid2fndata_dbi, &key, &data, MDB_RESERVE) != 0) {
+    if (mdb_put(si->txn, si->docid2data_dbi, &key, &data, MDB_RESERVE) != 0) {
         M_ERR("Failed to allocate data to store docid2fndata for docid %u", od->docid);
         return;
     }
 
+    uint8_t *mpos = data.mv_data;
+    uint32_t *offset = (uint32_t *)mpos;
+    *offset = size;  // Offset to skip numbers and facets and reach word pos data
+    mpos += sizeof(uint32_t);
+
     // First store numeric data
-    double *dpos = data.mv_data;
+    double *dpos = (double *)mpos;
     for (int i = 0; i < si->map->num_numbers; i++) {
         dpos[i] = od->num_data[i];
     }
@@ -249,6 +257,10 @@ static inline void store_facet_num_data(struct sindex *si, struct doc_data *od) 
         }
         pos += (f->count + 1);
     }
+    // printf("diff is %lu size is %lu\n", (uint8_t *)pos - (uint8_t *)data.mv_data, size);
+    uint8_t *wpos = ((uint8_t *) data.mv_data) + size;
+    memcpy(wpos, wpdata, len);
+    //printf("Full size %lu reserved %lu", full_size, ((uint8_t *)wpos - (uint8_t *)data.mv_data) + len);
 }
 
 static inline uint8_t *write_vint(uint8_t *buf, const int vi) {
@@ -332,8 +344,8 @@ static inline int obj_wid_count(struct doc_data *od, uint32_t wid) {
 
 
 /* Stores word id / frequency and positions for each document */
-static void store_wordpos_data(struct sindex *si, struct doc_data *od) {
-    if (UNLIKELY(kv_size(od->kv_widpos) == 0)) return;
+static uint8_t *gen_wordpos_data(struct sindex *si, struct doc_data *od, uint32_t *len) {
+    if (UNLIKELY(kv_size(od->kv_widpos) == 0)) return NULL;
     /* First sort the position information on wid.priority.position */
     wp_hold_t *h = malloc(sizeof(wp_hold_t) * kv_size(od->kv_widpos));
     size_t wp_len = kv_size(od->kv_widpos);
@@ -409,35 +421,28 @@ static void store_wordpos_data(struct sindex *si, struct doc_data *od) {
 next_widpos:
         x++;
     }
+
+    *len = (dpos - data);
     // printf("Full word data length %lu\n", (dpos - data));
     // dump_word_data(data);
-
-    // Reserve space in lmdb to store this data
-    MDB_val key, value;
-    key.mv_size = sizeof(uint32_t);
-    key.mv_data = &od->docid;
-    value.mv_data = data;
-    value.mv_size = (dpos - data);
-
-    if (mdb_put(si->txn, si->docid2wpos_dbi, &key, &value, 0) != 0) {
-        M_ERR("Failed to store docid2wpos for docid %u", od->docid);
-    }
-    free(data);
     free(h);
+    return data;
 }
 
 /* Stores the per document data into lmdb. Per document data is
- * store in 2 different dbi's.  One for word / freq / position
- * the other for numbers & facets.
+ * store in a single dbi.  Contains word / freq / position, 
+ * numbers & facets.
  *
  * Finally clears memory allocated to store per document index info
  */
 static void sindex_store_docdata(struct sindex *si) {
     struct doc_data *od = &si->wc->od;
 
-    store_facet_num_data(si, od);
-    store_wordpos_data(si, od);
+    uint32_t wplen = 0;
+    uint8_t *wpdata = gen_wordpos_data(si, od, &wplen);
+    store_docdata(si, od, wpdata, wplen);
 
+    free(wpdata);
     /* Clean up per obj data */
     for (int i = 0; i < kv_size(od->kv_widpos); i++) {
         free(kv_A(od->kv_widpos, i));
@@ -924,14 +929,10 @@ static void si_remove_docdata(struct sindex *si) {
     M_DBG("DELETING DOC %u", docid);
 
     // Delete the objid specific data
-    if (mdb_del(si->txn, si->docid2wpos_dbi, &key, NULL) != 0) {
-        M_ERR("Failed to deallocate wpos data for oid %u", docid);
+    if (mdb_del(si->txn, si->docid2data_dbi, &key, NULL) != 0) {
+        M_ERR("Failed to deallocate doc data for docid %u", docid);
     }
  
-    if (mdb_del(si->txn, si->docid2fndata_dbi, &key, NULL) != 0) {
-        M_ERR("Failed to deallocate fn data for oid %u", docid);
-    }
-
     kv_destroy(od->kv_widpos);
     kh_destroy(UNIQWID, od->kh_uniqwid);
 
@@ -1053,10 +1054,7 @@ void sindex_clear(struct sindex *si) {
     if ((rc = mdb_drop(si->txn, si->boolid2bmap_dbi, 0)) != 0) {
         M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
     }
-    if ((rc = mdb_drop(si->txn, si->docid2fndata_dbi, 0)) != 0) {
-        M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
-    }
-    if ((rc = mdb_drop(si->txn, si->docid2wpos_dbi, 0)) != 0) {
+    if ((rc = mdb_drop(si->txn, si->docid2data_dbi, 0)) != 0) {
         M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
     }
     if ((rc = mdb_drop(si->txn, si->facetid2bmap_dbi, 0)) != 0) {
@@ -1121,8 +1119,7 @@ struct sindex *sindex_new(struct shard *shard) {
     mdb_dbi_open(si->txn, DBI_TWID2WIDBMAP, MDB_CREATE|MDB_INTEGERKEY, &si->twid2widbmap_dbi);
     mdb_dbi_open(si->txn, DBI_TWID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->twid2bmap_dbi);
     mdb_dbi_open(si->txn, DBI_WID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->wid2bmap_dbi);
-    mdb_dbi_open(si->txn, DBI_DOCID2FNDATA, MDB_CREATE|MDB_INTEGERKEY, &si->docid2fndata_dbi);
-    mdb_dbi_open(si->txn, DBI_DOCID2WPOS, MDB_CREATE|MDB_INTEGERKEY, &si->docid2wpos_dbi);
+    mdb_dbi_open(si->txn, DBI_DOCID2DATA, MDB_CREATE|MDB_INTEGERKEY, &si->docid2data_dbi);
     mdb_dbi_open(si->txn, DBI_PHRASE, MDB_CREATE|MDB_INTEGERKEY, &si->phrase_dbi);
 #ifdef TRACK_WIDS
     mdb_dbi_open(si->txn, "wid2chrdbi", MDB_CREATE|MDB_INTEGERKEY, &si->wid2chr_dbi);
