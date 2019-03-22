@@ -233,13 +233,13 @@ static void store_docdata(struct sindex *si, struct doc_data *od, uint8_t *wpdat
         return;
     }
 
-    uint8_t *mpos = data.mv_data;
+    void *mpos = data.mv_data;
     uint32_t *offset = (uint32_t *)mpos;
     *offset = size;  // Offset to skip numbers and facets and reach word pos data
     mpos += sizeof(uint32_t);
 
     // First store numeric data
-    double *dpos = (double *)mpos;
+    double *dpos = mpos;
     for (int i = 0; i < si->map->num_numbers; i++) {
         dpos[i] = od->num_data[i];
     }
