@@ -58,7 +58,7 @@ static struct facet_count *process_facet_results(struct squery *sq, int f, int *
     // preallocated fc array.
     // Allocate an array big enough to handle the worst case scenario
     fc = malloc(sizeof(struct facet_count) * q->in->num_shards * q->cfg.max_facet_results);
-    struct hashtable *h = hashtable_new(q->cfg.max_facet_results * q->in->num_shards * 2);
+    struct hashtable *h = hashtable_new(512);
     for (int i = 0; i < q->in->num_shards; i++) {
         struct squery_result *sqres = sq[i].sqres;
         int size;
@@ -312,6 +312,9 @@ void generate_query_terms(struct query *q) {
         if ((q->cfg.typos == TYPO_OK) && (t->word->length > LEVLIMIT)) {
             t->typos = 1;
         }
+        if (q->text[strlen(q->text) - 1] == ' ') {
+            t->prefix = 0;
+        }
         kv_push(term_t *, q->terms, t);
         return;
     }
@@ -326,7 +329,11 @@ void generate_query_terms(struct query *q) {
             if (q->cfg.prefix == PREFIX_ALL) {
                 t->prefix = 1;
             } else if (q->cfg.prefix == PREFIX_LAST && i == 1) {
-                t->prefix = 1;
+                if (q->text[strlen(q->text) - 1] == ' ') {
+                    t->prefix = 0;
+                } else {
+                    t->prefix = 1;
+                }
             }
             // If typos are allowed by the query and if we are above the min typo check
             // length, enable search with typos
@@ -380,7 +387,11 @@ void generate_query_terms(struct query *q) {
         if (q->cfg.prefix == PREFIX_ALL) {
             t->prefix = 1;
         } else if (q->cfg.prefix == PREFIX_LAST && i == (q->num_words - 1)) {
-            t->prefix = 1;
+            if (q->text[strlen(q->text) - 1] == ' ') {
+                t->prefix = 0;
+            } else {
+                t->prefix = 1;
+            }
         }
         kv_push(term_t *, q->terms, t);
 

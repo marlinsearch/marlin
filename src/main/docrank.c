@@ -5,64 +5,6 @@
 #define positions_lt(a, b) ((a) < (b))
 KSORT_INIT(sort_positions, int, positions_lt)
 
-static inline wid_info_t *binary_search(wid_info_t *in, uint32_t wid, int numwid) {
-    int low = 0, high = numwid-1, middle;
-    while (low <= high) {
-        middle = (low+high)/2;
-        if (in[middle].wid < wid) {
-            low = middle+1;
-        } else if (in[middle].wid > wid) {
-            high = middle-1;
-        } else {
-            return &in[middle];
-        }
-    }
-    return NULL;
-}
-
-static inline bool lookup_wid(uint8_t *head, uint32_t wid, int *priority, int *position) {
-    uint16_t numwid = *(uint16_t *) head;
-    uint8_t *pos = head + 2;
-    wid_info_t *info = binary_search((wid_info_t *)pos, wid, numwid);
-    if (info) {
-        if (info->is_position) {
-            *priority = info->priority;
-            *position = info->offset;
-        } else {
-            uint8_t *p = head + info->offset;
-            // Skip frequency
-            p++;
-            uint8_t *prio = p;
-            *priority = *prio;
-            p += 2; // skip priority and count
-            read_vint(p, position);
-        }
-        return true;
-    }
-    return false;
-}
-
-static inline void rank_single_term2(struct docrank *rank, struct squery *sq, uint8_t *dpos) {
-    khash_t(WID2TYPOS) *allwordids = sq->sqres->termdata[0].tresult->wordids;
-    uint32_t wid;
-    int typos;
-    int priority;
-    int position;
-    kh_foreach(allwordids, wid, typos, {
-        if (lookup_wid(dpos, wid, &priority, &position)) {
-            if (typos < rank->typos) {
-                rank->typos = typos;
-            }
-            if (priority < rank->field) {
-                rank->field = priority;
-                rank->position = position;
-            }
-            return;
-        }
-    });
-
-}
-
 // Fill positions in which the given word is present.  Field & position values are 
 // converted to a single int 
 // TODO: Fill only positions for fields requested
@@ -118,28 +60,45 @@ static inline void rank_single_term(struct docrank *rank, struct squery *sq, uin
     int priority, position;
     khiter_t k;
     int dist;
+    int min_dist = 0xFF-1;
 
     // Check if we have an exact word match, set rank & typos accordingly
     if (sq->sqres->exact_docid_map[0]) {
         if (bmap_exists(sq->sqres->exact_docid_map[0], rank->docid)) {
             rank->exact = 1;
             rank->typos = 0;
+            min_dist = 0;
         }
     }
 
     // Iterate over all words and check which word matches and set rank fields
     for (int i = 0; i < numwid; i++) {
-        if ((dist = kh_get_val(WID2TYPOS, all_wordids, info[i].wid, 0xFF)) != 0xFF) {
+        if ((dist = kh_get_val(WID2TYPOS, all_wordids, info[i].wid, 0xFF)) <= min_dist) {
+            min_dist = dist;
+
+            // We already have a better result, skip this one
+            if (dist > rank->typos) continue;
+
+            // If typos are lower, reset the field and position to store this one
             if (dist < rank->typos) {
                 rank->typos = dist;
+                rank->field = 0xFF;
+                rank->position = 0xFFFF;
             }
+
             get_priority_position(&info[i], dpos, &priority, &position);
+
+            if (priority > rank->field) continue;
+
             if (priority < rank->field) {
                 rank->field = priority;
                 rank->position = position;
+            } else {
+                // priority == rank->field, update the position
+                if (position < rank->position) {
+                    rank->position = position;
+                }
             }
-            // TODO: is this ok ???
-            if (priority == 0) break;
         }
     }
 }
@@ -360,6 +319,14 @@ add_prox:
     }
 }
 
+#if 0
+static void dump_rank(struct docrank *rank) {
+    printf("\nDoc id is %u\n", rank->docid);
+    printf("pos %d field %d prox %d exact %d typos %d compare %f\n",
+            rank->position, rank->field, rank->proximity, rank->exact, rank->typos, rank->compare);
+}
+#endif
+
 static inline void calculate_rank(struct docrank *rank, struct squery *sq, uint8_t *dpos) {
     int num_words = sq->q->num_words;
     if (num_words == 0) {
@@ -393,30 +360,6 @@ static inline void calculate_rank(struct docrank *rank, struct squery *sq, uint8
 
 }
 
-static inline void perform_doc_rank(struct squery *sq, struct docrank *rank) {
-    MDB_val key, mdata;
-    key.mv_size = sizeof(uint32_t);
-    int rc;
-    key.mv_data = &rank->docid;
-    struct sindex *si = sq->shard->sindex;
-    if ((sq->q->cfg.hits_per_page > 0) && (sq->q->num_words > 0)) {
-        if ((rc = mdb_get(sq->txn, si->docid2wpos_dbi, &key, &mdata)) != 0) {
-            // Push this result down below
-            rank->typos = 0xFF;
-            rank->position = 0xFFFF;
-            rank->proximity = 0xFFFF;
-            return;
-        }
-        calculate_rank(rank, sq, mdata.mv_data);
-    } else {
-        rank->position = 0;
-        rank->proximity = 0;
-        rank->exact = 0;
-        rank->field = 0;
-        rank->typos = 0;
-    }
-}
-
 static inline void process_facet_result(struct squery *sq, uint8_t *pos) {
     struct mapping *m = sq->q->in->mapping;
     // calculate facet offset
@@ -442,22 +385,44 @@ static inline double setup_rank_compare(int rank_by, void *pos) {
     return dpos[rank_by];
 }
 
-static inline void perform_doc_processing(struct squery *sq, struct docrank *rank) {
+static inline void perform_doc_processing(struct squery *sq, struct docrank *rank, uint8_t *pos) {
+    // If we have any facets enabled, process that
+    if (sq->q->cfg.max_facet_results && sq->q->cfg.facet_enabled) {
+        process_facet_result(sq, pos + sizeof(uint32_t));
+    }
+
+    if (LIKELY(sq->q->cfg.rank_by >= 0)) {
+        rank->compare = setup_rank_compare(sq->q->cfg.rank_by, pos + sizeof(uint32_t));
+    }
+}
+
+
+static inline void *perform_doc_rank(struct squery *sq, struct docrank *rank) {
     MDB_val key, mdata;
     key.mv_size = sizeof(uint32_t);
     int rc;
     key.mv_data = &rank->docid;
     struct sindex *si = sq->shard->sindex;
-    if ((rc = mdb_get(sq->txn, si->docid2fndata_dbi, &key, &mdata)) == 0) {
-        // If we have any facets enabled, process that
-        if (sq->q->cfg.max_facet_results && sq->q->cfg.facet_enabled) {
-            process_facet_result(sq, mdata.mv_data);
-        }
-
-        if (LIKELY(sq->q->cfg.rank_by >= 0)) {
-            rank->compare = setup_rank_compare(sq->q->cfg.rank_by, mdata.mv_data);
-        }
+    if ((rc = mdb_get(sq->txn, si->docid2data_dbi, &key, &mdata)) != 0) {
+        // Push this result down, we could not read this docdata from mdb
+        rank->typos = 0xFF;
+        rank->position = 0xFFFF;
+        rank->proximity = 0xFFFF;
+        return NULL;
     }
+    if ((sq->q->cfg.hits_per_page > 0) && (sq->q->num_words > 0)) {
+        uint32_t offset = *(uint32_t *)mdata.mv_data;
+        uint8_t *wpos = (uint8_t *)mdata.mv_data;
+        wpos += offset;
+        calculate_rank(rank, sq, wpos);
+    } else {
+        rank->position = 0;
+        rank->proximity = 0;
+        rank->exact = 0;
+        rank->field = 0;
+        rank->typos = 0;
+    }
+    return mdata.mv_data;
 }
 
 static void setup_ranks(uint32_t val, void *rptr) {
@@ -465,9 +430,11 @@ static void setup_ranks(uint32_t val, void *rptr) {
     struct docrank *rank = &iter->ranks[iter->rankpos++];
     rank->docid = val;
     // Ranking is performed using document words / positions
-    perform_doc_rank(iter->sq, rank);
+    uint8_t *pos = perform_doc_rank(iter->sq, rank);
     // Further processing is done to handle facets / aggregations
-    perform_doc_processing(iter->sq, rank);
+    if (pos) {
+        perform_doc_processing(iter->sq, rank, pos);
+    }
 }
 
 struct docrank *perform_ranking(struct squery *sq, struct bmap *docid_map, uint32_t *resultcount) {
