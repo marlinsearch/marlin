@@ -101,7 +101,7 @@ char *shard_get_document(const struct shard *s, const char *id) {
     return sdata_get_document(s->sdata, id);
 }
 
-/* Get the document with id from shard data */
+/* Delete the given document from a shard */
 bool shard_delete_document(struct shard *s, const json_t *j) {
     const char *id = json_string_value(json_object_get(j, J_ID));
     if (!id) return false;
@@ -111,6 +111,31 @@ bool shard_delete_document(struct shard *s, const json_t *j) {
     }
     return !!docid;
 }
+
+bool shard_replace_document(struct shard *s, struct json_t *newj, const struct json_t *oldj) {
+    const char *id = json_string_value(json_object_get(oldj, J_ID));
+    if (!id) return false;
+    uint32_t docid = sdata_delete_document(s->sdata, id);
+    if (docid) {
+        sindex_delete_document(s->sindex, oldj, docid);
+    }
+    json_object_set_new(newj, J_ID, json_string(id));
+    shard_add_documents(s, newj);
+    return !!docid;
+}
+
+bool shard_update_document(struct shard *s, struct json_t *newj, struct json_t *oldj) {
+    const char *id = json_string_value(json_object_get(oldj, J_ID));
+    if (!id) return false;
+    uint32_t docid = sdata_delete_document(s->sdata, id);
+    if (docid) {
+        sindex_delete_document(s->sindex, oldj, docid);
+    }
+    json_object_update(oldj, newj);
+    shard_add_documents(s, oldj);
+    return !!docid;
+}
+
 
 struct shard *shard_new(struct index *in, uint16_t shard_id) {
     struct shard *s = calloc(1, sizeof(struct shard));

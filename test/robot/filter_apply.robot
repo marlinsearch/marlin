@@ -189,7 +189,10 @@ Test query gt filter
     Integer     $.totalHits         1
     POST         /1/indexes/testindex/query  {"filter": {"n": {"$gte": 1, "$lte": 3}}}
     Integer     $.totalHits         3
- 
+
+ Test query no matching docs
+    POST         /1/indexes/testindex/query  {"q":"lkjasdfljasdf", "filter": {"n": {"$gt": 1, "$lt": 3}}}
+    Integer     $.totalHits         0
 
 Delete the index
     Set Headers  ${appheader}

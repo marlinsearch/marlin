@@ -41,12 +41,14 @@ Load some data
 Test a empty query
     Set Headers  ${appheader}
     POST         /1/indexes/testindex/query  {"q": ""}
+    Output
     Integer     response status     200
     Integer     $.totalHits         5
 
 Test maxFacetResults
     Set Headers  ${appheader}
     POST         /1/indexes/testindex/query  {"maxFacetResults": 2}
+    Output
     Integer     response status     200
     Integer     $.totalHits         5
 

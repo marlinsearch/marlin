@@ -97,6 +97,9 @@ static void si_write_start(struct sindex *si) {
 /* Stores a id to bitmap mapping in lmdb.  It deletes a mbmap if required */
 static inline void store_id2mbmap(struct sindex *si, struct mbmap *b, MDB_dbi dbi, MDB_txn *txn) {
     if (UNLIKELY(!mbmap_save(b, txn, dbi))) {
+#if 0
+        // NOTE: facet may belong to some other dbi too as all facet_ids are shared.
+        // figure out how to handle this
         // If after a delete, the facetid2bmap dbi no longer exists
         // we need to delete the facetid2str mapping as it is no longer necessary
         if (dbi == si->facetid2bmap_dbi) {
@@ -105,10 +108,12 @@ static inline void store_id2mbmap(struct sindex *si, struct mbmap *b, MDB_dbi db
             MDB_val key;
             key.mv_size = sizeof(facet_id);
             key.mv_data = &facet_id;
+
             if ((rc = mdb_del(si->txn, si->facetid2str_dbi, &key, NULL) != 0)) {
                 M_ERR("Deindex facetid2str failed %d %u\n", rc, facet_id);
             }
         }
+#endif
     }
     mbmap_free(b);
 }

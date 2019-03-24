@@ -3,10 +3,12 @@
 - [x] Filtering
 - [x] Facets
 - [x] Sorting / Ranking by numeric value
-- [ ] CRUD
+- [p] CRUD
 - [ ] Mapping updates on reconfiguration
 - [ ] Parial Scanning during queries
 - [ ] Stress Test Framework
+- [ ] Documentation
+- [ ] Website
 - [ ] Restrict facets
 - [ ] Get specific facets, instead of everything
 - [ ] Boolean Facets
@@ -14,6 +16,7 @@
 
 ### TODO 0.2
 
+- [ ] Management web ui
 - [ ] Aggregation
 - [ ] Facet boost
 - [ ] Handle number arrays during indexing, only 1st number is indexed

@@ -189,6 +189,16 @@ static void index_work_job(void *data) {
                 shard_delete_document(s, job->j);
                 }
                 break;
+            case JOB_REPLACE: {
+                struct shard *s = kv_A(in->shards, job->id);
+                shard_replace_document(s, job->j, job->j2);
+                }
+                break;
+            case JOB_UPDATE: {
+                struct shard *s = kv_A(in->shards, job->id);
+                shard_update_document(s, job->j, job->j2);
+                }
+                break;
             default:
                 break;
         }
@@ -681,6 +691,71 @@ static char *failure_message(const char *msg) {
     return tmp;
 }
 
+static char *index_document_job(h2o_req_t *req, void *data, JOB_TYPE type) {
+    struct index *in = data;
+    // First load the incoming document
+    json_error_t error;
+    json_t *j = json_loadb(req->entity.base, req->entity.len, 0, &error);
+    if (!j) {
+        return http_error(req, HTTP_BAD_REQUEST);
+    }
+ 
+    // Parse the document id
+    char *id = parse_req_document_id(in, req);
+    if (!id) {
+        json_decref(j);
+        return http_error(req, HTTP_BAD_REQUEST);
+    }
+
+    // Try to lookup the current document
+    int sid = get_shard_routing_id(id, in->num_shards);
+    char *doc = shard_get_document(kv_A(in->shards, sid), id);
+    // We could not find the current document
+    if (!doc) {
+        json_decref(j);
+        free(id);
+        return http_error(req, HTTP_NOT_FOUND);
+    }
+
+    // J2 holds the old document
+    json_t *j2 = json_loads(doc, 0, &error);
+    if (!j2) {
+        json_decref(j);
+        free(id);
+        free(doc);
+        return http_error(req, HTTP_SERVER_ERROR);
+    }
+
+    // Create a new job 
+    struct in_job *job = in_job_new(in, type);
+    job->index = in;
+    job->id = sid;
+    job->j = j;
+    job->j2 = j2;
+
+    free(id);
+    free(doc);
+
+    // Handle index job addition failure
+    if (index_add_job(in, job) == 0) {
+        return strdup(J_SUCCESS);
+    } else {
+        return http_error(req, HTTP_TOO_MANY);
+    }
+}
+
+/* A PUT replaces the object */
+static char *index_replace_document_callback(h2o_req_t *req, void *data) {
+    // Create a relace document job
+    return index_document_job(req, data, JOB_REPLACE);
+}
+
+/* A PATCH updates the object */
+static char *index_update_document_callback(h2o_req_t *req, void *data) {
+    // Create an update document job
+    return index_document_job(req, data, JOB_UPDATE);
+}
+
 /* Deletes a single document from the index by the document id */
 static char *index_delete_document_callback(h2o_req_t *req, void *data) {
     struct index *in = data;
@@ -862,7 +937,9 @@ const struct api_path apipaths[] = {
     // delete document
     {"DELETE", URL_MULTI, KA_DELETE, index_delete_document_callback},
     // replace object
-//    {"PUT", URL_MULTI, KA_UPDATE, index_replace_document_callback},
+    {"PUT", URL_MULTI, KA_UPDATE, index_replace_document_callback},
+    // update object
+    {"PATCH", URL_MULTI, KA_UPDATE, index_update_document_callback},
     // Done here
     {"", "", KA_NONE, NULL}
     /*
