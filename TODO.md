@@ -3,7 +3,7 @@
 - [x] Filtering
 - [x] Facets
 - [x] Sorting / Ranking by numeric value
-- [p] CRUD
+- [x] CRUD
 - [ ] Parial Scanning during queries
 - [ ] Stress Test Framework
 - [ ] Python tests
@@ -14,6 +14,8 @@
 
 ### TODO 0.2
 
+- [ ] Bulk updates
+- [ ] Delete by query
 - [ ] Restrict facets
 - [ ] Get specific facets, instead of everything
 - [ ] Boolean Facets
