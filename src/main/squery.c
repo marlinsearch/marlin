@@ -40,12 +40,8 @@ static struct bmap *get_twid_to_docids(struct squery *sq, struct sindex *si, uin
     // read the query to find that out
     struct bmap *b = mbmap_load_bmap(sq->txn, si->twid2bmap_dbi, IDPRIORITY(twid, 0));
     // If we have any docids under this twid, return it
-    if (b && bmap_cardinality(b)) {
-        return b;
-    } else {
-        bmap_free(b);
-        return NULL;
-    }
+    // Return an empty bitmap otherwise
+    return b ? b : bmap_new();
 }
 
 static inline void add_wid_to_wordids(uint32_t wid, void *data) {
@@ -76,7 +72,10 @@ static void process_termresult(struct squery *sq, struct sindex *si, struct term
     termresult_t *tr = td->tresult;
     // Check if we have a twid or word ids set, if not just bail out
     // we do not have any documents matching that term
-    if ((tr->twid == 0) && (kh_size(tr->wordids) == 0)) return;
+    if ((tr->twid == 0) && (kh_size(tr->wordids) == 0)) {
+        td->tbmap = bmap_new();
+        return;
+    }
 
     // TODO: Currently it handles matches from all fields, restrict based on requested fields
     // If we have a top level word id set, we can use the top level document matches
@@ -84,7 +83,7 @@ static void process_termresult(struct squery *sq, struct sindex *si, struct term
     if (tr->twid) {
         td->tbmap = get_twid_to_docids(sq, si, tr->twid);
         // If we have docids under this twid, let us get all the words that are under it
-        if (td->tbmap) {
+        if (bmap_cardinality(td->tbmap)) {
             set_wids_under_twid(sq, si, tr);
         }
     } else {
@@ -166,14 +165,14 @@ static struct bmap *get_term_docids(struct squery_result *sqres, int term_pos, i
         oper_add(o, sqres->termdata[term_pos + 1].tbmap);
     }
 
-    // oper_or by default returns an empty bitmap if all above bitmaps are null.
-    // Return a NULL instead when no matches are found
-    struct bmap *ret = o->count ? oper_or(o) : NULL;
+    struct bmap *ret = oper_or(o);
     oper_free(o);
+
     return ret;
 }
 
-/* Returns the total final matching document ids for the given terms */
+/* Returns the total final matching document ids for the given terms.  Returns an empty
+ * bmap if no matching results are found */
 static struct bmap *get_matching_docids(struct squery *sq) {
     int num_terms = kv_size(sq->q->terms);
     struct squery_result *sqres = sq->sqres;
@@ -187,31 +186,14 @@ static struct bmap *get_matching_docids(struct squery *sq) {
     // This happens when the query text is a single word
     if (num_terms == 1) {
         termdata_t *td = &sqres->termdata[0];
-        if (td->tbmap) {
-            // TODO: optimize, see if we can get away without duplicating this
-            return bmap_duplicate(td->tbmap);
-        } else {
-            return NULL;
-        }
+        return bmap_duplicate(td->tbmap);
     }
 
     struct bmap *ret = NULL;
     // This happens when query text is 2 words
     // 'a new' => (a & new) | anew 
     if (num_terms == 3) {
-        // Make sure we have matches for both words
-        if (sqres->termdata[0].tbmap && sqres->termdata[1].tbmap) {
-            struct oper *o = oper_new();
-            oper_add(o, sqres->termdata[0].tbmap);
-            oper_add(o, sqres->termdata[1].tbmap);
-            ret = oper_and(o);
-            // Make sure we have common results or throw it out
-            if (ret && bmap_cardinality(ret) == 0) {
-                bmap_free(ret);
-                ret = NULL;
-            }
-            oper_free(o);
-        }
+        ret = bmap_and(sqres->termdata[0].tbmap, sqres->termdata[1].tbmap);
         // Handle the last term
         goto last_term;
     }
@@ -228,33 +210,22 @@ static struct bmap *get_matching_docids(struct squery *sq) {
      * The final docids are 
      *
      * ((a | anew) & (anew | new | newhope) & (hope | anewhope)) | (anewhope)
+     * a ab b bc c cd d abcd
+     * 0 1  2  3 4 5  6  7 
      */
     struct oper *o = oper_new();
     for (int i = 0; i < num_terms; i += 2) {
         struct bmap *b = get_term_docids(sqres, i, num_terms);
-        // If not term ids are found, we do not have matching results bail out
-        if (!b) {
-            oper_total_free(o);
-            goto last_term;
-        } else {
-            oper_add(o, b);
-        }
+        oper_add(o, b);
     }
     // We have been matching data until now
     ret = oper_and(o);
     oper_total_free(o);
-    // If not matches were found, return NULL
-    if (bmap_cardinality(ret) == 0) {
-        bmap_free(ret);
-        ret = NULL;
-    }
 
 last_term:
     // Finally or with the last combined terms search
-    if (sqres->termdata[num_terms-1].tbmap) {
-        if (!ret) {
-            return bmap_duplicate(sqres->termdata[num_terms-1].tbmap);
-        }
+    // Only process if we have any results for the combined terms search
+    if (bmap_cardinality(sqres->termdata[num_terms-1].tbmap)) {
         // TODO: Implement bmap_inplace_or !
         struct oper *o = oper_new();
         oper_add(o, ret);
@@ -324,7 +295,7 @@ static void squery_apply_filters(struct squery *sq) {
         bmap_free(sq->sqres->docid_map);
         sq->sqres->docid_map = bmap_new();
     }
-    dump_filter(sf, 0);
+    // dump_filter(sf, 0);
     // Free the duplicated shard filter
     filter_free(sf);
 }
@@ -380,6 +351,7 @@ void execute_squery(void *w) {
     // Let the shard index handle the query now
     struct shard *s = sq->shard;
     struct sindex *si = s->sindex;
+    sq->sqres->fh = init_facet_hash(sq->q->in, &sq->q->cfg);
 
     // Setup a mdb txn
     mdb_txn_begin(si->env, NULL, MDB_RDONLY, &sq->txn);
@@ -389,10 +361,6 @@ void execute_squery(void *w) {
 
     // From the term data, find all documents which match our query
     sq->sqres->docid_map = get_matching_docids(sq);
-    if (sq->sqres->docid_map == NULL) {
-       sq->sqres->num_hits = 0;
-       goto cleanup;
-    }
     trace_query("Lookup documents in", &start);
 
     // Apply filters
@@ -401,12 +369,11 @@ void execute_squery(void *w) {
     }
     trace_query("Applied filters in", &start);
 
+    uint32_t resultcount = 0;
     sq->sqres->num_hits = bmap_cardinality(sq->sqres->docid_map);
 
-    sq->sqres->fh = init_facet_hash(sq->q->in, &sq->q->cfg);
-
     // Perform ranking
-    uint32_t resultcount = sq->sqres->num_hits;
+    resultcount = sq->sqres->num_hits;
     struct docrank *ranks = perform_ranking(sq, sq->sqres->docid_map, &resultcount);
     trace_query("Ranks calculated in", &start);
     //dump_bmap(sq->sqres->docid_map);
@@ -421,7 +388,6 @@ void execute_squery(void *w) {
 
     bmap_free(sq->sqres->docid_map);
 
-cleanup:
     // cleanup all termdata
     for (int i = 0; i < num_terms; i++) {
         termdata_free(&sq->sqres->termdata[i]);

@@ -177,9 +177,11 @@ static json_t *form_result(struct query *q, struct squery *sq) {
     if (q->in->num_shards == 1) {
         // If we have a single shard, take the result as is
         ranks = sq[0].sqres->ranks;
-        rank_sort(sq[0].sqres->rank_count, ranks, q->rank_rule);
-        for (int j = 0; j < sq[0].sqres->rank_count; j++) {
-            sq[0].sqres->ranks[j].shard_id = 0;
+        if (ranks) {
+            rank_sort(sq[0].sqres->rank_count, ranks, q->rank_rule);
+            for (int j = 0; j < sq[0].sqres->rank_count; j++) {
+                sq[0].sqres->ranks[j].shard_id = 0;
+            }
         }
     } else {
         // If we have more than one shard, allocate data to combine all shard results
@@ -289,6 +291,9 @@ char *execute_query(struct query *q) {
 
     char *response = json_dumps(j, JSON_PRESERVE_ORDER|JSON_COMPACT);
     json_decref(j);
+#ifdef TRACE_QUERY
+    printf("\n");
+#endif
     return response;
 }
 

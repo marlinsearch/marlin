@@ -420,11 +420,12 @@ struct bmap *oper_or(const struct oper *o) {
     printf("OR OPERATION : %d entries\n", o->count);
 #endif
     struct bmap *r = NULL;
-    int end = 0;
+    int start = 0;
     // Iterate till first proper bmap
-    while (end < o->count) {
-        if (o->b[end++]->num_c) {
-            r = convert_to_bitset_bmap(o->b[0]);
+    for (int i = 0; i < o->count; i++) {
+        if (o->b[i]->num_c) {
+            r = convert_to_bitset_bmap(o->b[i]);
+            start = i + 1;
             break;
         }
     }
@@ -434,7 +435,7 @@ struct bmap *oper_or(const struct oper *o) {
         return r;
     }
 
-    for (int i=end; i<o->count; i++) {
+    for (int i=start; i<o->count; i++) {
         bmap_inplace_lazy_or(r, o->b[i]);
     }
 

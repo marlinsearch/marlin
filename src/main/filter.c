@@ -271,7 +271,7 @@ static struct filter *parse_key_json(struct index *in, const char *key, json_t *
     const struct schema *s = get_field_schema(in, key);
     // Check if a field exists for this key
     if (s) {
-        M_INFO("Key %s, s %s\n", key, s->fname);
+        M_DBG("Key %s, s %s\n", key, s->fname);
         return parse_schema_json(s, json);
     }
     // Handle filter: {$and: [{$or : [{'a':1},{'b':2}]},{$or : 
@@ -342,7 +342,7 @@ struct filter *parse_filter(struct index *in, json_t *j) {
         }
     }
 
-    dump_filter(f, 0);
+    // dump_filter(f, 0);
 
     return f;
 }

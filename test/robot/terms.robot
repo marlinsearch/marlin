@@ -3,6 +3,7 @@ Resource  common.robot
 
 *** Variables ***
 ${settings}     {"indexedFields": ["str"] }
+${index}  {"name" : "testindex", "nShards": 1}
 
 *** Test Cases ***
 Create a new application
@@ -51,6 +52,12 @@ Test query aaaa
     Integer     response status     200
     Integer     $.totalHits         8
 
+Test query dddd
+    Set Headers  ${appheader}
+    POST         /1/indexes/testindex/query  {"q": "dddd"}
+    Integer     response status     200
+    Integer     $.totalHits         4
+
 Test query baaa
     Set Headers  ${appheader}
     POST         /1/indexes/testindex/query  {"q": "baaa"}
@@ -68,6 +75,18 @@ Test query aaaa bbbb
     POST         /1/indexes/testindex/query  {"q": "aaaa bbbb"}
     Integer     response status     200
     Integer     $.totalHits         7
+
+Test query aaaa bbbb cccc
+    Set Headers  ${appheader}
+    POST         /1/indexes/testindex/query  {"q": "aaaa bbbb cccc"}
+    Integer     response status     200
+    Integer     $.totalHits         6
+
+Test query aaaa bbbb cccc dddd
+    Set Headers  ${appheader}
+    POST         /1/indexes/testindex/query  {"q": "aaaa bbbb cccc dddd"}
+    Integer     response status     200
+    Integer     $.totalHits         5
 
 Test query aaaa bbbb cccc dddd e
     Set Headers  ${appheader}
