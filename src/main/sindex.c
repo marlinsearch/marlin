@@ -663,9 +663,9 @@ static void string_deindex_word_pos(word_pos_t *wp, void *data) {
     }
 
     // Set the wid to obj id mapping
-    wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
+    wid2bmap_remove(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
             wid, od->docid, 0);
-    wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
+    wid2bmap_remove(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
             wid, od->docid, p);
 
     // If we are not the first word, add the wid pair to phrase dbi
@@ -688,7 +688,6 @@ static void deindex_string(struct sindex *si, const char *str, int priority) {
     struct analyzer *a = get_default_analyzer();
     a->analyze_string_for_indexing(str, string_deindex_word_pos, &ad);
 }
-
 
 
 /**

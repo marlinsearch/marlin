@@ -295,7 +295,7 @@ static void squery_apply_filters(struct squery *sq) {
         bmap_free(sq->sqres->docid_map);
         sq->sqres->docid_map = bmap_new();
     }
-    dump_filter(sf, 0);
+    // dump_filter(sf, 0);
     // Free the duplicated shard filter
     filter_free(sf);
 }
@@ -370,12 +370,11 @@ void execute_squery(void *w) {
     trace_query("Applied filters in", &start);
 
     uint32_t resultcount = 0;
-    struct docrank *ranks = NULL;
     sq->sqres->num_hits = bmap_cardinality(sq->sqres->docid_map);
 
     // Perform ranking
     resultcount = sq->sqres->num_hits;
-    ranks = perform_ranking(sq, sq->sqres->docid_map, &resultcount);
+    struct docrank *ranks = perform_ranking(sq, sq->sqres->docid_map, &resultcount);
     trace_query("Ranks calculated in", &start);
     //dump_bmap(sq->sqres->docid_map);
 

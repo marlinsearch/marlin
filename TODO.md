@@ -4,22 +4,23 @@
 - [x] Facets
 - [x] Sorting / Ranking by numeric value
 - [p] CRUD
-- [ ] Mapping updates on reconfiguration
 - [ ] Parial Scanning during queries
 - [ ] Stress Test Framework
+- [ ] Python tests
+- [ ] Mapping updates on reconfiguration
+- [ ] Reindexing
 - [ ] Documentation
 - [ ] Website
-- [ ] Restrict facets
-- [ ] Get specific facets, instead of everything
-- [ ] Boolean Facets
-- [ ] Python tests
 
 ### TODO 0.2
 
+- [ ] Restrict facets
+- [ ] Get specific facets, instead of everything
+- [ ] Boolean Facets
 - [ ] Management web ui
 - [ ] Aggregation
 - [ ] Facet boost
-- [ ] Handle number arrays during indexing, only 1st number is indexed
+- [ ] Handle numeric arrays during indexing, only 1st number is indexed
 
 ### TODO 1.0
 
@@ -52,3 +53,4 @@ Python tests
 
 - facet.robot
 - sort.robot
+- crud.robot

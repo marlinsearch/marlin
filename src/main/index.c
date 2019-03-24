@@ -691,7 +691,10 @@ static char *failure_message(const char *msg) {
     return tmp;
 }
 
-static char *index_document_job(h2o_req_t *req, void *data, JOB_TYPE type) {
+
+/* Performs the job type replace / update on a document.  A previous document of the same
+ * id may or may not be required based on type */
+static char *index_document_job(h2o_req_t *req, void *data, JOB_TYPE type, bool required) {
     struct index *in = data;
     // First load the incoming document
     json_error_t error;
@@ -710,8 +713,9 @@ static char *index_document_job(h2o_req_t *req, void *data, JOB_TYPE type) {
     // Try to lookup the current document
     int sid = get_shard_routing_id(id, in->num_shards);
     char *doc = shard_get_document(kv_A(in->shards, sid), id);
+
     // We could not find the current document
-    if (!doc) {
+    if (required && !doc) {
         json_decref(j);
         free(id);
         return http_error(req, HTTP_NOT_FOUND);
@@ -719,12 +723,15 @@ static char *index_document_job(h2o_req_t *req, void *data, JOB_TYPE type) {
 
     // J2 holds the old document
     json_t *j2 = json_loads(doc, 0, &error);
-    if (!j2) {
+    if (!j2 && required) {
         json_decref(j);
         free(id);
         free(doc);
         return http_error(req, HTTP_SERVER_ERROR);
     }
+
+    // Set the id for the new document
+    json_object_set_new(j, J_ID, json_string(id));
 
     // Create a new job 
     struct in_job *job = in_job_new(in, type);
@@ -747,13 +754,13 @@ static char *index_document_job(h2o_req_t *req, void *data, JOB_TYPE type) {
 /* A PUT replaces the object */
 static char *index_replace_document_callback(h2o_req_t *req, void *data) {
     // Create a relace document job
-    return index_document_job(req, data, JOB_REPLACE);
+    return index_document_job(req, data, JOB_REPLACE, false);
 }
 
 /* A PATCH updates the object */
 static char *index_update_document_callback(h2o_req_t *req, void *data) {
     // Create an update document job
-    return index_document_job(req, data, JOB_UPDATE);
+    return index_document_job(req, data, JOB_UPDATE, true);
 }
 
 /* Deletes a single document from the index by the document id */

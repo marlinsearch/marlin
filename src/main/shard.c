@@ -113,15 +113,17 @@ bool shard_delete_document(struct shard *s, const json_t *j) {
 }
 
 bool shard_replace_document(struct shard *s, struct json_t *newj, const struct json_t *oldj) {
-    const char *id = json_string_value(json_object_get(oldj, J_ID));
-    if (!id) return false;
-    uint32_t docid = sdata_delete_document(s->sdata, id);
-    if (docid) {
-        sindex_delete_document(s->sindex, oldj, docid);
+    // If we have an existing document to replace, delete that
+    if (oldj) {
+        const char *id = json_string_value(json_object_get(oldj, J_ID));
+        if (!id) return false;
+        uint32_t docid = sdata_delete_document(s->sdata, id);
+        if (docid) {
+            sindex_delete_document(s->sindex, oldj, docid);
+        }
     }
-    json_object_set_new(newj, J_ID, json_string(id));
     shard_add_documents(s, newj);
-    return !!docid;
+    return true;
 }
 
 bool shard_update_document(struct shard *s, struct json_t *newj, struct json_t *oldj) {
@@ -133,9 +135,8 @@ bool shard_update_document(struct shard *s, struct json_t *newj, struct json_t *
     }
     json_object_update(oldj, newj);
     shard_add_documents(s, oldj);
-    return !!docid;
+    return true;
 }
-
 
 struct shard *shard_new(struct index *in, uint16_t shard_id) {
     struct shard *s = calloc(1, sizeof(struct shard));

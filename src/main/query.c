@@ -291,6 +291,9 @@ char *execute_query(struct query *q) {
 
     char *response = json_dumps(j, JSON_PRESERVE_ORDER|JSON_COMPACT);
     json_decref(j);
+#ifdef TRACE_QUERY
+    printf("\n");
+#endif
     return response;
 }
 
