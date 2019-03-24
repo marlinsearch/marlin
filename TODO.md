@@ -48,11 +48,9 @@
 
 ### In Progress
 
-CRUD
 Python tests
 
 ### Tests to complete
 
 - facet.robot
 - sort.robot
-- crud.robot
