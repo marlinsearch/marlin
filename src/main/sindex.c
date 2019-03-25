@@ -484,7 +484,7 @@ static inline void deindex_number(struct sindex *si, int priority, double d) {
     data.mv_data = &docid;
     int rc = 0;
     if ((rc = mdb_del(si->txn, si->num_dbi[priority], &key, &data) != 0)) {
-        M_ERR("Deindex num failed %d %f %u\n", rc, d, docid);
+        M_DBG("Deindex num failed %d %f %u %s %d\n", rc, d, docid, mdb_strerror(rc), rc);
     }
 }
 

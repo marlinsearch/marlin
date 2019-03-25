@@ -169,6 +169,7 @@ static int create_app_from_json(struct json_t *j) {
 
     // TODO: Return proper error codes and let the user know what the problem is
     if (!(name && appid && apikey)) return -1;
+    if (strlen(name) <= 0) return -1;
     if (strlen(appid) != APPID_SIZE) return -1;
     if (strlen(apikey) != APIKEY_SIZE) return -1;
     M_DBG("Creating application %s %s %s", name, appid, apikey);

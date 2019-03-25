@@ -4,8 +4,8 @@
 - [x] Facets
 - [x] Sorting / Ranking by numeric value
 - [x] CRUD
-- [ ] Parial Scanning during queries
-- [ ] Stress Test Framework
+- [x] Basic Stress Test Framework
+- [ ] Partial Scanning during queries
 - [ ] Python tests
 - [ ] Mapping updates on reconfiguration
 - [ ] Reindexing
@@ -23,6 +23,7 @@
 - [ ] Aggregation
 - [ ] Facet boost
 - [ ] Handle numeric arrays during indexing, only 1st number is indexed
+- [ ] Better Stress Test Framework
 
 ### TODO 1.0
 

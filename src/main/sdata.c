@@ -291,6 +291,10 @@ void sdata_clear(struct sdata *sd) {
         M_ERR("Failed to drop usedfree dbi %d %s", rc, mdb_strerror(rc));
     }
     mdb_txn_commit(sd->txn);
+    bmap_free(sd->used_bmap);
+    bmap_free(sd->free_bmap);
+    sd->used_bmap = bmap_new();
+    sd->free_bmap = bmap_new();
     sd->last_docid = 1;
 }
 

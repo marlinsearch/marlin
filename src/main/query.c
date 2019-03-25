@@ -196,8 +196,7 @@ static json_t *form_result(struct query *q, struct squery *sq) {
             memcpy(&ranks[pos], sq[i].sqres->ranks, sq[i].sqres->rank_count * sizeof(struct docrank));
             pos += sq[i].sqres->rank_count;
         }
-        printf("Sorting %d hits\n", total_ranks);
-        // TODO: do a partial sort and sort ?
+        M_DBG("Sorting %d hits\n", total_ranks);
         rank_sort(total_ranks, ranks, q->rank_rule);
     }
 
