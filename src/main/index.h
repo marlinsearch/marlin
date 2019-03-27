@@ -10,6 +10,7 @@
 #include "kvec.h"
 #include "mapping.h"
 #include "query.h"
+#include "keys.h"
 
 #define MAX_INDEX_NAME      128
 #define MAX_NUM_SHARDS      16
@@ -85,5 +86,7 @@ void index_free(struct index *in);
 void index_clear(struct index *in);
 void index_delete(struct index *in);
 struct schema *get_field_schema(struct index *in, const char *key);
+void index_apply_key(struct index *in, struct key *k, KEY_ACCESS access);
+void index_delete_key(struct index *in, struct key *k);
 
 #endif

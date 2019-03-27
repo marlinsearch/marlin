@@ -295,7 +295,7 @@ static char *index_data_callback(h2o_req_t *req, void *data) {
     job->j = j;
     index_add_job(in, job);
     M_DBG("Index job added type %d count %u", job->type, in->job_count);
-    return strdup(J_SUCCESS);
+    return api_success(req);
 }
 
 static json_t *index_get_info_json(struct index *in) {
@@ -375,7 +375,7 @@ static const char *cfg_set_rank_sort_field(struct query_cfg *qcfg, struct mappin
                 return "Invalid sort / rank direction specified";
             }
             // If we have a mapping use that to validate its ok
-            if (m) {
+            if (m && m->index_schema) {
                 printf("sort field is %s\n", key);
                 struct schema *s = schema_find_field(m->index_schema->child, key);
                 if (!s) {
@@ -570,7 +570,7 @@ static char *index_set_settings_callback(h2o_req_t *req, void *data) {
         if (in->mapping->ready_to_index) {
             update_shard_mappings(in);
         }
-        return strdup(J_SUCCESS);
+        return api_success(req);
     }
 jerror:
     M_ERR("Json error %s", error.source);
@@ -609,11 +609,9 @@ static char *index_delete_callback(h2o_req_t *req, void *data) {
     struct index *in = data;
     M_INFO("Deleting index %s", in->name);
     if (app_delete_index(in->app, in)) {
-        return strdup(J_SUCCESS);
+        return api_success(req);
     } else {
-        req->res.status = 400;
-        req->res.reason = "Bad Request";
-        return strdup(J_FAILURE);
+        return api_bad_request(req);
     }
 }
 
@@ -624,7 +622,7 @@ static char *index_clear_callback(h2o_req_t *req, void *data) {
         struct shard *s = kv_A(in->shards, i);
         shard_clear(s);
     }
-    return strdup(J_SUCCESS);
+    return api_success(req);
 }
 
 /* Called by the analyzer for every word in the query string.
@@ -745,7 +743,7 @@ static char *index_document_job(h2o_req_t *req, void *data, JOB_TYPE type, bool 
 
     // Handle index job addition failure
     if (index_add_job(in, job) == 0) {
-        return strdup(J_SUCCESS);
+        return api_success(req);
     } else {
         return http_error(req, HTTP_TOO_MANY);
     }
@@ -788,13 +786,13 @@ static char *index_delete_document_callback(h2o_req_t *req, void *data) {
             job->j = j;
             job->id = sid;
             if (index_add_job(in, job) == 0) {
-                resp = strdup(J_SUCCESS);
+                resp = api_success(req);
             } else {
                 return http_error(req, HTTP_TOO_MANY);
             }
         }
     } else {
-        resp = strdup(J_FAILURE);
+        resp = api_bad_request(req);
     }
     return resp;
 }

@@ -597,6 +597,16 @@ char *api_bad_request(h2o_req_t *req) {
     return strdup(J_FAILURE);
 }
 
+char *api_not_found(h2o_req_t *req) {
+    req->res.status = 404;
+    req->res.reason = "Not Found";
+    return strdup(J_FAILURE);
+}
+
+char *api_success(h2o_req_t *req) {
+    return strdup(J_SUCCESS);
+}
+
 // String hashed is appid-apikey-method-url --> callback data
 void register_api_callback(const char *appid, const char *apikey, 
                            const char *method, const char *url, struct url_cbdata *cbdata) {

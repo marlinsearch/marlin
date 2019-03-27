@@ -5,6 +5,7 @@
 - [x] Sorting / Ranking by numeric value
 - [x] CRUD
 - [x] Basic Stress Test Framework
+- [ ] Keys
 - [ ] Partial Scanning during queries
 - [ ] Python tests
 - [ ] Mapping updates on reconfiguration
@@ -17,6 +18,8 @@
 - [ ] Bulk updates
 - [ ] Delete by query
 - [ ] Restrict facets
+- [ ] Restrict fields to return
+- [ ] Restrict fields to search
 - [ ] Get specific facets, instead of everything
 - [ ] Boolean Facets
 - [ ] Management web ui
@@ -39,6 +42,7 @@
 ### Refactor
 
 - [ ] dtrie - msync
+- [ ] http_error / api_bad_request use just one
 
 ### Bugs
 

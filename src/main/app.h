@@ -25,6 +25,7 @@ struct app {
     // Timeout handling, we need a period timer
     h2o_timeout_t timeout;
     struct app_timeout timeout_entry;
+    kvec_t(struct key *) keys;
 
     // The indices this app manages
     kvec_t(struct index *) indexes;
@@ -34,5 +35,6 @@ struct app *app_new(const char *name, const char *appid, const char *apikey);
 void app_free(struct app *a);
 void app_delete(struct app *a);
 bool app_delete_index(struct app *a, struct index *in);
+void app_index_apply_allkeys(struct app *a, struct index *in);
 
 #endif
