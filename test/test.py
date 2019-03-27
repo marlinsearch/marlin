@@ -415,6 +415,7 @@ if __name__ == '__main__':
 
     if not live:
         stop_marlin()
+
     if fail != 0:
         print "\n************** FAILED ", fail, " TESTS *******************\n"
-    sys.exit(fail)
+        sys.exit(1)
