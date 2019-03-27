@@ -60,7 +60,7 @@ test: testsetup
 	@  (cd test && python test.py) || (echo "Tests failed $$?"; exit 1)
 
 coverage: testsetup debug
-	@  (cd build-debug && cp ../test/test.json . && cp -R ../test/robot . && make marlin_coverage)
+	@  (cd build-debug && cp ../test/test.json . && cp -R ../test/robot . && cp -R ../test/py . && make marlin_coverage)
 
 testlive:
 	@  (cd test && python test.py live) || (echo "Tests failed $$?"; exit 1)
