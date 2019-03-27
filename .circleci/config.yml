@@ -13,7 +13,7 @@ jobs:
           command: make
       - run:
           name: Test Marlin
-          command: make test
+          command: cd test && python test.py
       - run:
           name: Coverage
           command: |
