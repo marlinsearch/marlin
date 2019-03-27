@@ -31,6 +31,7 @@
 #define SETTINGS_PATH   "./settings.json"
 #define APPS_FILE       "apps.json"
 #define INDEXES_FILE    "indexes.json"
+#define KEYS_FILE       "keys.json"
 #define INDEX_FILE      "index.json"
 #define MAPPING_FILE    "mapping.json"
 #define SHARD_FILE      "shard.json"
@@ -75,6 +76,9 @@
 #define J_FIELDID       "fieldId"
 #define J_IS_INDEXED    "isIndexed"
 #define J_IS_FACET      "isFacet"
+#define J_PERMISSIONS   "permissions"
+#define J_INDEXES       "indexes"
+#define J_DESCRIPTION   "description"
 
 // API Settings fields
 #define J_S_INDEXFIELDS     "indexedFields"

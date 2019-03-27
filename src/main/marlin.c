@@ -145,7 +145,7 @@ static char *delete_app_handler(h2o_req_t *req, void *data) {
     }
     save_apps();
     // TODO: Return app information and when it was deleted
-    return strdup(J_SUCCESS);
+    return api_success(req);
 }
 
 /* API handler to get an application */

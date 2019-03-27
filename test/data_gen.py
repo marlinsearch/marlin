@@ -38,6 +38,7 @@ print '"data":['
 for i in xrange(1, rend+1):
     print "{"
     flist = get_facets()
+    print '"_id": "%s",' % str(i)
     print '"facet": "%s",' % flist[0]
     print '"facetlist": ["%s","%s","%s"],' % (flist[1], flist[2], flist[3])
     if i%10 == 0:
