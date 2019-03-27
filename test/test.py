@@ -368,111 +368,6 @@ class TestIndexObjects(TestBase):
         self.delete_test_app()
 
 
-class TestSettings(TestBase):
-    def setUp(self):
-        # Create the test app and use test app key
-        self.setup_test_app()
-        self.use_app_key(test_app_id, master_api_key)
-        super(TestSettings, self).setUp()
-
-    def check_setting(self, key, value):
-        y = self.get_settings()
-        self.assertEqual(y[key], value);
-
-    def test_a_cfg_loadobjects(self):
-        self.setup_test_index()
-        #make sure mapping is empty
-        r = self.get(test_index_url + '/mapping')
-        self.assertFalse(r['readyToIndex'])
-        self.assertIsNone(r['indexSchema'])
-        self.assertIsNone(r['fullSchema'])
-        # configure index and facet fields
-        settings_url = test_index_url + '/settings'
-        settings = {'indexedFields': test_index_fields, "facetFields": test_facet_fields}
-        self.post(settings_url, settings)
-        # Add objects
-        r = self.post(test_index_url, json_data['data'][0:1000])
-
-    def test_b_hitsperpage(self):
-        q = {"q": "a"}
-        x = self.post_valid_query(q)
-        self.assertEqual(x["numHits"], 25)
-        s = {"hitsPerPage": "10"}
-        self.post_invalid_settings(s)
-        s = {"hitsPerPage": 10}
-        self.post_valid_settings(s)
-        self.check_setting("hitsPerPage", 10)
-        q = {"q": "a"}
-        x = self.post_valid_query(q)
-        self.assertEqual(x["numHits"], 10)
-        s = {"hitsPerPage": 25}
-        self.post_valid_settings(s)
-        self.check_setting("hitsPerPage", 25)
-        x = self.post_valid_query(q)
-        self.assertEqual(x["numHits"], 25)
-        # Try overriding hitsPerPage
-        q = {"q": "a", "hitsPerPage":11}
-        x = self.post_valid_query(q)
-        self.assertEqual(x["numHits"], 11)
-        # Make sure override did not screw up the original value
-        q = {"q": "a"}
-        x = self.post_valid_query(q)
-        self.assertEqual(x["numHits"], 25)
-
-    def test_c_maxhits(self):
-        q = {"q": "a"}
-        x = self.post_valid_query(q)
-        self.assertEqual(x["numPages"], 500/25)
-        s = {"maxHits": "500"}
-        self.post_invalid_settings(s)
-        s = {"maxHits": 100}
-        self.post_valid_settings(s)
-        self.check_setting("maxHits", 100)
-        q = {"q": "a"}
-        x = self.post_valid_query(q)
-        self.assertEqual(x["numPages"], 4)
-        s = {"maxHits": 500}
-        self.post_valid_settings(s)
-        self.check_setting("maxHits", 500)
-        x = self.post_valid_query(q)
-        self.assertEqual(x["numHits"], 25)
-        self.assertEqual(x["numPages"], 500/25)
-        # Try overriding hitsPerPage
-        q = {"q": "a", "maxHits":100}
-        x = self.post_valid_query(q)
-        self.assertEqual(x["numPages"], 4)
-        # Make sure override did not screw up the original value
-        q = {"q": "a"}
-        x = self.post_valid_query(q)
-        self.assertEqual(x["numPages"], 500/25)
-
-    def test_d_maxfacets(self):
-        q = {"q": "a"}
-        x = self.post_valid_query(q)
-        self.assertEqual(len(x["facets"]["facetlist"]), 10)
-        s = {"maxFacetResults": "500"}
-        self.post_invalid_settings(s)
-        s = {"maxFacetResults": 20}
-        self.post_valid_settings(s)
-        self.check_setting("maxFacetResults", 20)
-        q = {"q": "a"}
-        x = self.post_valid_query(q)
-        self.assertEqual(len(x["facets"]["facetlist"]), 20)
-        s = {"maxFacetResults": 10}
-        self.post_valid_settings(s)
-        self.check_setting("maxFacetResults", 10)
-        x = self.post_valid_query(q)
-        self.assertEqual(len(x["facets"]["facetlist"]), 10)
-        # Try overriding hitsPerPage
-        q = {"q": "a", "maxFacetResults":15}
-        x = self.post_valid_query(q)
-        self.assertEqual(len(x["facets"]["facetlist"]), 15)
-        # Make sure override did not screw up the original value
-        q = {"q": "a"}
-        x = self.post_valid_query(q)
-        self.assertEqual(len(x["facets"]["facetlist"]), 10)
-        self.delete_test_app()
-
 if __name__ == '__main__':
     print "Starting tests .."
     live = (len(sys.argv) > 1) and sys.argv[1] == 'live'
@@ -486,7 +381,6 @@ if __name__ == '__main__':
         json_data = js
  
     fail = 0
-
     # Ping test
     suite = unittest.TestLoader().loadTestsFromTestCase(TestPing)
     r = unittest.TextTestRunner(verbosity=0).run(suite)
@@ -507,20 +401,17 @@ if __name__ == '__main__':
     r = unittest.TextTestRunner(verbosity=0).run(suite)
     fail = fail + len(r.failures)
 
-    # Settings tests
-    """
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestSettings)
-    r = unittest.TextTestRunner(verbosity=0).run(suite)
-    fail = fail + len(r.failures)
-    """
-
     # Index objects tests
     suite = unittest.TestLoader().loadTestsFromTestCase(TestIndexObjects)
     r = unittest.TextTestRunner(verbosity=0).run(suite)
     fail = fail + len(r.failures)
 
-    os.system("cd robot && python -m robot .")
-
+    # Robot tests
+    x = os.system("cd robot && python -m robot .")
+    fail += x
+    # Python tests
+    y = os.system("cd py && python pytests.py")
+    fail += y
 
     if not live:
         stop_marlin()

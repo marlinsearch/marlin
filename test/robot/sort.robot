@@ -49,7 +49,7 @@ Test desc sort
     Set Headers  ${appheader}
     POST         /1/indexes/testindex/query  {"sortBy": {"n": "desc"}, "maxFacetResults": 0}
     Integer     response status     200
-    Integer     $.totalHits         5
+    Integer     $.totalHits         6
 
 Test asc sort
     Set Headers  ${appheader}

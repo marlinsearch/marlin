@@ -588,6 +588,8 @@ void app_delete(struct app *a) {
     // and indexes file path
     char indexes_path[PATH_MAX];
     snprintf(indexes_path, sizeof(path), "%s/%s/%s", marlin->db_path, a->name, INDEXES_FILE);
+    char keys_path[PATH_MAX];
+    snprintf(keys_path, sizeof(path), "%s/%s/%s", marlin->db_path, a->name, KEYS_FILE);
     // Delete all indexes
     for (int i=0; i<kv_size(a->indexes); i++) {
         index_delete(kv_A(a->indexes, i));
@@ -596,6 +598,7 @@ void app_delete(struct app *a) {
     // Free the app, which destroys the indexes kvec and handles the rest of the free
     app_free(a);
     unlink(indexes_path);
+    unlink(keys_path);
     rmdir(path);
 }
 
