@@ -487,7 +487,6 @@ void *run_loop(void *_thread_index) {
 
     /* wait until all the connection gets closed */
     while (num_connections(0) != 0) {
-        printf("Connections close %d %lu\n", num_connections(0), thread_index);
         h2o_evloop_run(threads[thread_index].ctx.loop, INT32_MAX);
     }
 
@@ -564,8 +563,8 @@ void init_api(void) {
       register_handler(hostconf, "/1", api_v1);
 
       if (create_listener() != 0) {
-          M_ERR("failed to listen to 127.0.0.1:9002: %s", strerror(errno));
-          goto Error;
+          M_ERR("failed to listen on configured port: %s", strerror(errno));
+          exit(1);
       }
 
       h2o_barrier_init(&startup_sync_barrier, marlin->num_threads);
@@ -573,8 +572,6 @@ void init_api(void) {
           pthread_t tid;
           h2o_multithread_create_thread(&tid, NULL, run_loop, (void *)i);
       }
-Error:
-      return;
 }
 
 /**

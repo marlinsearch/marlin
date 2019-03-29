@@ -334,15 +334,12 @@ void bmap_free(struct bmap *b) {
     if (!b) return;
     bmap_free_containers(b);
     free(b);
-    b = NULL;
 }
 
 struct bmap *bmap_new() {
     struct bmap *b = calloc(1, sizeof(struct bmap));
     return b;
 }
-
-
 
 
 // BITMAP operations
@@ -357,7 +354,6 @@ struct oper *oper_new() {
 void oper_free(struct oper *o) {
     free(o->b);
     free(o);
-    o = NULL;
 }
 
 // Frees all bitmaps added to this operation

@@ -10,14 +10,14 @@ static inline uint16_t lowbits(uint32_t i) {
 }
 
 static int binary_search(struct mbmap *b, uint16_t id) {
-    int low = 0, high = b->num_c-1, middle;
+    int low = 0, high = b->num_c-1;
     // Usually we add to the end, handle that
     if (b->num_c > 0) {
         if (b->c[high].id == id) return high;
         if (b->c[high].id < id) return -b->num_c - 1;
     }
     while (low <= high) {
-        middle = (low+high)/2;
+        int middle = (low+high)/2;
         if (b->c[middle].id < id) {
             low = middle+1;
         } else if (b->c[middle].id > id){
