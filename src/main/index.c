@@ -376,7 +376,6 @@ static const char *cfg_set_rank_sort_field(struct query_cfg *qcfg, struct mappin
             }
             // If we have a mapping use that to validate its ok
             if (m && m->index_schema) {
-                printf("sort field is %s\n", key);
                 struct schema *s = schema_find_field(m->index_schema->child, key);
                 if (!s) {
                     return "The field to sort / rank by is not indexed";

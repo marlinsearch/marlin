@@ -76,17 +76,17 @@ static inline uint32_t get_twid(struct dnode *n) {
 }
 
 static inline void dump_node(struct dnode *n) {
-    printf("\nNode %p type %d numchild %d wid %d twid %d\n", n, n->type, n->num_child, n->has_wid, n->has_twid);
+    printf("\nNode %p type %u numchild %d wid %d twid %d\n", n, n->type, n->num_child, n->has_wid, n->has_twid);
     struct dnode_ptr *np = n->child;
     for (int i=0; i<n->num_child; i++) {
         struct dnode_ptr *tnp = &np[i];
         printf("Chr %c offset %u\n", (unsigned char)tnp->c, tnp->nid.offset);
     }
     if (n->has_wid) {
-        printf("wid : %d ", get_wid(n));
+        printf("wid : %u ", get_wid(n));
     }
     if (n->has_twid) {
-        printf("twid : %d ", get_twid(n));
+        printf("twid : %u ", get_twid(n));
     }
     printf("\n");
 }
@@ -255,9 +255,8 @@ static void insert_nodeid_in_node(struct dnode *n, struct dnode_id *nid, chr_t c
     // It should never exist in case of a store pid in page!
     if (pos >= 0) {
         // TODO: proper warning !
-        printf("\n\n\nSOMETHING IS WRONG during insert %u!! \n\n\n", c);
-        //dump_page(p);
-        exit(1);
+        M_ERR("\n\n\nSOMETHING IS WRONG during insert %u!! \n\n\n", c);
+        // dump_page(p);
         return;
     }
     pos = -pos-1;
@@ -280,7 +279,7 @@ static void replace_nodeid_in_node(struct dnode *n, struct dnode_id *nid, chr_t 
     // It should always exist in case of a replace pid in page!
     if (pos < 0) {
         // TODO: proper warning !
-        printf("\n\n\nSOMETHING IS WRONG during replace !! \n\n\n");
+        M_ERR("\n\n\nSOMETHING IS WRONG during replace !! \n\n\n");
         return;
     }
     struct dnode_ptr *tnp = &np[pos];
@@ -294,7 +293,6 @@ static void upsize_node(struct node_iter *iter) {
     NTYPE type = n->type + 1;
     if (type == NS_MAX) {
         type += 2;
-        printf("!!! New type is %d\n", type);
     }
     struct dnode_id new_node_id;
     struct dnode *new_node = get_free_node(iter->trie, type, &new_node_id);
@@ -320,7 +318,6 @@ static void upsize_node(struct node_iter *iter) {
     } else {
         iter->trie->meta->root_offset = new_node_id.offset;
         iter->trie->root = new_node;
-        printf("\n ******************** Root changed %u %d *********************!!\n", new_node_id.offset, new_node->type);
     }
     iter->node = new_node;
 }

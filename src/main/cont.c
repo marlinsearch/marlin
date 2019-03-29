@@ -475,7 +475,6 @@ void cont_iterate(const struct cont *c, bmap_iterator iter, void *param) {
 void cont_free(struct cont *c) {
     free(c->buffer);
     free(c);
-    c = NULL;
 }
 
 struct cont *cont_new(uint16_t id) {
