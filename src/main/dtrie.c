@@ -420,8 +420,17 @@ static uint32_t word_exists_under_root(struct dtrie *dt, const chr_t *str, int s
     return get_wid(current);
 }
 
-uint32_t dtrie_exists(struct dtrie *dt, const chr_t *str, int slen, uint32_t *twids) {
+static inline bool read_lock_trie(struct dtrie *dt) {
     RDLOCK(&dt->trie_lock);
+    if (!dt->map) {
+        UNLOCK(&dt->trie_lock);
+        return false;
+    }
+    return true;
+}
+
+uint32_t dtrie_exists(struct dtrie *dt, const chr_t *str, int slen, uint32_t *twids) {
+    if (!read_lock_trie(dt)) return 0;
     uint32_t wid = word_exists_under_root(dt, str, slen, twids);
     UNLOCK(&dt->trie_lock);
     return wid;
@@ -515,6 +524,16 @@ void dtrie_write_end(struct dtrie *dt, MDB_dbi dbi, MDB_txn *txn) {
             store_freemap(&dt->freemaps[i], fid, dbi, txn);
         }
     }
+}
+
+void dtrie_clear(struct dtrie *dt) {
+    WRLOCK(&dt->trie_lock);
+    munmap(dt->map, MAPSIZE);
+    dt->map = NULL;
+    close(dt->fd);
+    dt->fd = -1;
+    unlink(dt->path);
+    UNLOCK(&dt->trie_lock);
 }
 
 void dtrie_free(struct dtrie *dt) {
@@ -643,7 +662,7 @@ static void node_walk(struct dtrie *dt, struct dnode *d, termresult_t *tr, int d
  * can be retrieve by the caller.  If it is not a prefix match, 
  * we add wid if we find any */
 static void lookup_twid(struct dtrie *dt, term_t *t, termresult_t *tr) {
-    RDLOCK(&dt->trie_lock);
+    if (!read_lock_trie(dt)) return;
     // First lookup the node for this word
     struct dnode *d = lookup_word_node(dt, t->word->chars, t->word->length);
     if (d) {
@@ -663,7 +682,7 @@ static void lookup_twid(struct dtrie *dt, term_t *t, termresult_t *tr) {
 }
 
 static void lookup_notypo(struct dtrie *dt, term_t *t, termresult_t *tr) {
-    RDLOCK(&dt->trie_lock);
+    if (!read_lock_trie(dt)) return;
     struct dnode *d = lookup_word_node(dt, t->word->chars, t->word->length);
     if (d) {
         if (t->prefix) {
@@ -742,7 +761,7 @@ static void node_lev(struct lev_data *ld, struct dnode *d, int *prev_row, int *p
 
 
 static void lookup_typo(struct dtrie *dt, term_t *t, termresult_t *tr) {
-    RDLOCK(&dt->trie_lock);
+    if (!read_lock_trie(dt)) return;
     // Set the max distance based on word length
     // TODO: Make word distance configurable and send during lookup request
     int wlen = t->word->length;
@@ -772,7 +791,7 @@ static void lookup_typo(struct dtrie *dt, term_t *t, termresult_t *tr) {
 
 uint32_t dtrie_lookup_exact(struct dtrie *dt, word_t *word) {
     uint32_t ret = 0;
-    RDLOCK(&dt->trie_lock);
+    if (!read_lock_trie(dt)) return ret;
     struct dnode *d = lookup_word_node(dt, word->chars, word->length);
     if (d) {
         // NOTE: get_wid can return 0 if we do not have an exact match

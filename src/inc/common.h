@@ -89,6 +89,8 @@
 #define J_S_RANK_BY         "rankBy"
 #define J_S_SORT_BY         "sortBy"
 #define J_S_RANKALGO        "rankAlgorithm"
+#define J_S_FULLSCAN        "fullScan"
+#define J_S_FULLSCAN_THRES  "fullScanThreshold"
 
 
 // config / settings field names
@@ -119,6 +121,7 @@
 #define J_R_COUNT         "count"
 #define J_R_KEY           "key"
 #define J_R_FACETS        "facets"
+#define J_R_QUERYTEXT     "queryText"
 
 #define ORDER_ASC           "asc"
 #define ORDER_DESC          "desc"

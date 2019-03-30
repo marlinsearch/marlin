@@ -7,13 +7,13 @@
 - [x] Basic Stress Test Framework
 - [x] Keys
 - [x] Python tests
-- [ ] Partial Scanning during queries
+- [x] Partial Scanning during queries
+- [ ] Documentation
+- [ ] Website
 - [ ] Mapping updates on reconfiguration
 - [ ] Highlighting
 - [ ] Snippets
 - [ ] Reindexing
-- [ ] Documentation
-- [ ] Website
 
 ### TODO 0.2
 
@@ -35,17 +35,19 @@
 ### TODO 0.3
 - [ ] Better analyzers, stop words, plurals, wiktionary etc.,
 - [ ] Synonyms
+- [ ] Group results
 
 ### TODO 1.0
 
 - [ ] WAL
 - [ ] Advanced query syntax
-- [ ] Simple SQL queries
+- [ ] Phrase search
 
 ### TODO 2.0
 
 - [ ] Clustering
 - [ ] dtrie rewrite
+- [ ] Simple SQL queries
 
 ### Refactor
 
@@ -60,8 +62,12 @@
 
 ### In Progress
 
+- Documentation
+- Website
+
 
 ### Tests to complete
 
 - [ ] facet.robot
 - [ ] sort.robot
+- [ ] rank_terms.robot

@@ -100,7 +100,7 @@ struct sindex *sindex_new(struct shard *s);
 void sindex_add_documents(struct sindex *si, json_t *j);
 void sindex_free(struct sindex *si);
 void sindex_delete(struct sindex *si);
-void sindex_clear(struct sindex *si);
+void sindex_clear(struct sindex *si, int close);
 void sindex_set_mapping(struct sindex *si, const struct mapping *map);
 void sindex_delete_document(struct sindex *si, const json_t *j, uint32_t docid);
 uint8_t *read_vint(uint8_t *buf, int *value);

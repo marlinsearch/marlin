@@ -13,7 +13,6 @@
 #include "keys.h"
 
 #define MAX_INDEX_NAME      128
-#define MAX_NUM_SHARDS      16
 #define DEFAULT_NUM_SHARDS  1
 #define JOB_QUEUE_LEN       4096
 
@@ -22,6 +21,7 @@
 #define DEF_MAX_HITS        500
 #define MAX_HITS_LIMIT      1000
 #define DEF_FACET_RESULTS   10
+#define DEF_FULLSCAN_THRES  25000
 
 typedef enum jobtype {
     JOB_ADD,

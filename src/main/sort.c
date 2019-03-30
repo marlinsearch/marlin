@@ -3,6 +3,7 @@
 #include "ksort.h"
 #include "sort.h"
 #include <stdbool.h>
+#include <stdio.h>
 
 SORT_RULE default_rule[] = { R_TYPO, R_PROX, R_FIELD, R_POS, R_EXACT };
 int default_num_rules = 5;

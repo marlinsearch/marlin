@@ -9,12 +9,14 @@
 
 typedef struct termdata {
     termresult_t *tresult;
-    struct bmap *tbmap;
+    struct bmap *tbmap;           // All documents matching this term
+    struct bmap *tzero_typo_bmap; // All documents with zero typos matching this term
 } termdata_t;
 
 
 struct facet_hash {
     struct hashtable *h;
+    int rcount;
 };
 
 typedef struct facet_count {
@@ -31,6 +33,7 @@ typedef struct facet_count {
 struct squery_result {
     termdata_t *termdata;
     struct bmap *docid_map;
+    struct bmap *zero_typo_docid_map;   // Matching documents with zero typos
     struct docrank *ranks;
     struct bmap **exact_docid_map;      // Documents which are exact match of size q->num_words
     struct facet_hash *fh;              // Facet hashtables for enabled facets
@@ -45,6 +48,7 @@ struct squery {
     struct query *q;
     struct squery_result *sqres;
     struct shard *shard;
+    bool fast_rank;    // Did we do a partial scan for processing this query?
     int shard_idx;
     MDB_txn *txn;
 };

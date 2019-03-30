@@ -46,8 +46,8 @@ def urlget(purl, statuscode=200):
 
 def check_nojobs():
     nojobs = False
-    count = 0
-    while not nojobs and count < 30000:
+    scount = 0
+    while not nojobs and scount < 30000:
         surl = url + index + "/info"
         try:
             x = urlget(surl)
@@ -56,7 +56,7 @@ def check_nojobs():
         except:
             pass
         time.sleep(1/100)
-        count += 1
+        scount += 1
 
 def posth(headers, url, data):
     r = requests.post(url, data=json.dumps(data), headers=headers, verify=False)
@@ -322,6 +322,8 @@ class TestSettings(TestBase):
         q = {"q": "a"}
         x = self.post_valid_query(q)
         self.assertEqual(len(x["facets"]["facetlist"]), 10)
+        q = {"q": "a", "maxFacetResults":10000}
+        x = self.post_valid_query(q)
 
 class TestBasicQuery(TestBase):
     # Test basic string matching

@@ -107,6 +107,7 @@ void dtrie_free(struct dtrie *dt);
 struct termresult *dtrie_lookup_term(struct dtrie *dt, term_t *t);
 void termresult_free(struct termresult *t);
 uint32_t dtrie_lookup_exact(struct dtrie *dt, word_t *word);
+void dtrie_clear(struct dtrie *dt);
 
 #endif
 
