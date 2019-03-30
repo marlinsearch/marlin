@@ -1,6 +1,8 @@
 #include "docrank.h"
 #include "squery.h"
 #include "ksort.h"
+#include "common.h"
+#include "float.h"
 
 #define positions_lt(a, b) ((a) < (b))
 KSORT_INIT(sort_positions, int, positions_lt)
@@ -23,9 +25,12 @@ static int *fill_positions(wid_info_t *info, uint8_t *head, int *p, int *len) {
         while (freq > 0) {
             int priority = *c;
             int position;
+            // Skip priority
             c++;
             int count = *c;
             freq -= count;
+            // Skip count
+            c++;
             while (count > 0) {
                 c = read_vint(c, &position);
                 ret[plen] = (priority << 16) + position;
@@ -34,6 +39,8 @@ static int *fill_positions(wid_info_t *info, uint8_t *head, int *p, int *len) {
             // Skip the separator 0xFF
             c++;
         }
+        // Set length
+        *len = plen;
     }
     return ret;
 }
@@ -397,7 +404,7 @@ static inline void perform_doc_processing(struct squery *sq, struct docrank *ran
 }
 
 
-static inline void *perform_doc_rank(struct squery *sq, struct docrank *rank) {
+static inline void perform_doc_rank(struct squery *sq, struct docrank *rank) {
     MDB_val key, mdata;
     key.mv_size = sizeof(uint32_t);
     int rc;
@@ -405,10 +412,12 @@ static inline void *perform_doc_rank(struct squery *sq, struct docrank *rank) {
     struct sindex *si = sq->shard->sindex;
     if ((rc = mdb_get(sq->txn, si->docid2data_dbi, &key, &mdata)) != 0) {
         // Push this result down, we could not read this docdata from mdb
+        M_ERR("Failed to read docdata for %u", rank->docid);
         rank->typos = 0xFF;
         rank->position = 0xFFFF;
         rank->proximity = 0xFFFF;
-        return NULL;
+        rank->compare = sq->q->cfg.rank_asc ? DBL_MAX : -DBL_MAX;
+        return;
     }
     if ((sq->q->cfg.hits_per_page > 0) && (sq->q->num_words > 0)) {
         uint32_t offset = *(uint32_t *)mdata.mv_data;
@@ -422,28 +431,137 @@ static inline void *perform_doc_rank(struct squery *sq, struct docrank *rank) {
         rank->field = 0;
         rank->typos = 0;
     }
-    return mdata.mv_data;
+    // Perform further processing for facets / aggregations
+    perform_doc_processing(sq, rank, mdata.mv_data);
 }
 
 static void setup_ranks(uint32_t val, void *rptr) {
     struct rank_iter *iter = rptr;
     struct docrank *rank = &iter->ranks[iter->rankpos++];
     rank->docid = val;
+    perform_doc_rank(iter->sq, rank);
+}
+
+static void setup_zero_typo_ranks(uint32_t val, void *rptr) {
+    struct rank_iter *iter = rptr;
+    struct docrank *rank = &iter->ranks[iter->rankpos++];
+    rank->docid = val;
     // Ranking is performed using document words / positions
-    uint8_t *pos = perform_doc_rank(iter->sq, rank);
-    // Further processing is done to handle facets / aggregations
-    if (pos) {
-        perform_doc_processing(iter->sq, rank, pos);
+    perform_doc_rank(iter->sq, rank);
+    bmap_add(iter->dbmap, val);
+}
+
+static void setup_skip_ranks(uint32_t val, void *rptr) {
+    struct rank_iter *iter = rptr;
+    if (iter->skip_counter++ % iter->skip_count == 0) {
+        if (!bmap_exists(iter->dbmap, val)) {
+            struct docrank *rank = &iter->ranks[iter->rankpos++];
+            rank->docid = val;
+            // Ranking is performed using document words / positions
+            perform_doc_rank(iter->sq, rank);
+        }
     }
 }
 
-struct docrank *perform_ranking(struct squery *sq, struct bmap *docid_map, uint32_t *resultcount) {
-    struct rank_iter riter;
+static struct docrank *perform_fast_ranking(struct squery *sq, struct bmap *docid_map, 
+        uint32_t *resultcount) {
     uint32_t totalcount = *resultcount;
+
+    // First limit the number of documents we will be scanning for this ranking
+    int fcount = MIN((totalcount / 100), MAX_HITS_LIMIT * 10);
+    fcount = MAX(fcount, MAX_HITS_LIMIT * 5);
+
+    M_DBG("Performing fast rank on %d documents", fcount);
+
+    // Have a bitmap to track docs that have been ranked
+    struct bmap *dbmap = bmap_new();
+
+    // Allocate enough space with buffer for ranks
+    struct docrank *ranks = malloc((MAX_HITS_LIMIT + fcount + 10) * sizeof(struct docrank));
+
+    // Get the preferred result document ids, first prefer all documents
+    struct bmap *rmap = docid_map;
+    struct rank_iter riter;
+    int rankpos = 0;
+
+    riter.sq = sq;
+    riter.rankpos = 0;
+    riter.ranks = ranks;
+    riter.dbmap = dbmap;
+
+    // Prefer docids with zero typos if necessary
+    int zt_card = bmap_cardinality(sq->sqres->zero_typo_docid_map);
+    if (zt_card) {
+        // If documents with zero typos is less than max possible hits, include all documents
+        if (zt_card <= MAX_HITS_LIMIT) {
+            bmap_iterate(sq->sqres->zero_typo_docid_map, setup_zero_typo_ranks, &riter);
+            rankpos = riter.rankpos;
+        } else {
+            // If we have many documents with zero typos, prefer that
+            rmap = sq->sqres->zero_typo_docid_map;
+        }
+    }
+
+    // Now prefer items by ranking order
+    MDB_cursor *cursor;
+    MDB_val key, data;
+    struct sindex *si = sq->shard->sindex;
+    MDB_cursor_op op = sq->q->cfg.rank_asc? MDB_LAST:MDB_FIRST;
+    MDB_cursor_op op2 = sq->q->cfg.rank_asc? MDB_PREV:MDB_NEXT;
+    mdb_cursor_open(sq->txn, si->num_dbi[sq->q->cfg.rank_by], &cursor);
+
+    // Iterate items by ranking order and rank them if they are matching documents
+    while(mdb_cursor_get(cursor, &key, &data, op) == 0) {
+        op = op2;
+        uint32_t docid = *(uint32_t *)data.mv_data;
+        // Make sure this doc_id is in our preferred bitmap
+        if (bmap_exists(rmap, docid)) {
+            // Make sure we did not already add this doc_id
+            if (bmap_exists(dbmap, docid)) continue;
+            // Add this document
+            ranks[rankpos].docid = docid;
+            perform_doc_rank(sq, &ranks[rankpos]);
+            // Keep track of this document
+            bmap_add(dbmap, docid);
+            rankpos++;
+            // If we have enough documents, break
+            if (rankpos >= MAX_HITS_LIMIT) break;
+        }
+    }
+    mdb_cursor_close(cursor);
+    riter.rankpos = rankpos;
+
+
+    // Rest of the documents are picked in a sequential order skipping entries
+    riter.skip_count = (totalcount / fcount) + 1;
+    riter.skip_counter = 0;
+    bmap_iterate(rmap, setup_skip_ranks, &riter);
+    bmap_free(dbmap);
+    *resultcount = (riter.rankpos - 1);
+    return ranks;
+}
+
+
+/* Perform ranking, calculates ranks for documents in the docid_map.  It may do a fullScan or
+ * a partial scan based on configuration and number of matching documents */
+struct docrank *perform_ranking(struct squery *sq, struct bmap *docid_map, uint32_t *resultcount) {
+    uint32_t totalcount = *resultcount;
+    struct query *q = sq->q;
+    sq->fast_rank = !q->cfg.full_scan;
+
+    // TODO: When aggregation is implemented and enabled, handle fastscan
+    if (sq->fast_rank && totalcount > q->cfg.full_scan_threshold && q->cfg.rank_by >= 0) {
+        M_INFO("Performing fast ranking");
+        return perform_fast_ranking(sq, docid_map, resultcount);
+    }
+
+    sq->fast_rank = false;
+    struct rank_iter riter;
     struct docrank *ranks = malloc(totalcount * sizeof(struct docrank));
     riter.sq = sq;
     riter.rankpos = 0;
     riter.ranks = ranks;
+    riter.dbmap = NULL;
 
     bmap_iterate(docid_map, setup_ranks, &riter);
 

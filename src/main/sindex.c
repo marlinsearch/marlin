@@ -328,7 +328,7 @@ static void dump_word_data(uint8_t *head) {
                     x++;
                 }
                 if (*p != 0xFF) {
-                    printf("WTF\n");
+                    printf("What !!\n");
                 }
                 p++;
             }
@@ -428,9 +428,13 @@ next_widpos:
     }
 
     *len = (dpos - data);
-    // printf("Full word data length %lu\n", (dpos - data));
-    // dump_word_data(data);
     free(h);
+    /*
+    static int counter = 0;
+    counter++;
+    if (counter == 4) {
+        dump_word_data(data);
+    }*/
     return data;
 }
 
@@ -1031,7 +1035,7 @@ void sindex_set_mapping(struct sindex *si, const struct mapping *map) {
 /* Deletes the shard index.  Drops all index data and removes the index folder */
 void sindex_delete(struct sindex *si) {
     // Drop all dbis
-    sindex_clear(si);
+    sindex_clear(si, 1);
     char path[PATH_MAX];
     struct shard *shard = si->shard;
     // Get the shard_data path
@@ -1051,49 +1055,67 @@ void sindex_delete(struct sindex *si) {
     rmdir(path);
 }
 
-void sindex_clear(struct sindex *si) {
+void sindex_clear(struct sindex *si, int close) {
     // Drop all dbis
     mdb_txn_begin(si->env, NULL, 0, &si->txn);
     int rc = 0;
-    if ((rc = mdb_drop(si->txn, si->boolid2bmap_dbi, 0)) != 0) {
+    if ((rc = mdb_drop(si->txn, si->boolid2bmap_dbi, close)) != 0) {
         M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
     }
-    if ((rc = mdb_drop(si->txn, si->docid2data_dbi, 0)) != 0) {
+    if ((rc = mdb_drop(si->txn, si->docid2data_dbi, close)) != 0) {
         M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
     }
-    if ((rc = mdb_drop(si->txn, si->facetid2bmap_dbi, 0)) != 0) {
+    if ((rc = mdb_drop(si->txn, si->facetid2bmap_dbi, close)) != 0) {
         M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
     }
-    if ((rc = mdb_drop(si->txn, si->facetid2str_dbi, 0)) != 0) {
+    if ((rc = mdb_drop(si->txn, si->facetid2str_dbi, close)) != 0) {
         M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
     }
-    if ((rc = mdb_drop(si->txn, si->phrase_dbi, 0)) != 0) {
+    if ((rc = mdb_drop(si->txn, si->phrase_dbi, close)) != 0) {
         M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
     }
-    if ((rc = mdb_drop(si->txn, si->wid2bmap_dbi, 0)) != 0) {
+    if ((rc = mdb_drop(si->txn, si->wid2bmap_dbi, close)) != 0) {
         M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
     }
-    if ((rc = mdb_drop(si->txn, si->twid2bmap_dbi, 0)) != 0) {
+    if ((rc = mdb_drop(si->txn, si->twid2bmap_dbi, close)) != 0) {
         M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
     }
-    if ((rc = mdb_drop(si->txn, si->twid2widbmap_dbi, 0)) != 0) {
+    if ((rc = mdb_drop(si->txn, si->twid2widbmap_dbi, close)) != 0) {
         M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
     }
     // If we have a mapping and some numbers, clear respective
     // num_dbi
     if (si->map) {
         for (int i = 0; i < si->map->num_numbers; i++) {
-            if ((rc = mdb_drop(si->txn, si->num_dbi[i], 0)) != 0) {
+            if ((rc = mdb_drop(si->txn, si->num_dbi[i], close)) != 0) {
                 M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
             }
         }
     }
+
+    // Clear the trie
+    dtrie_clear(si->trie);
+
+    // If we are not closing, create a new trie and free this later
+    if (!close) {
+        char path[PATH_MAX];
+        struct shard *shard = si->shard;
+        snprintf(path, sizeof(path), "%s/%s/%s", shard->base_path, shard->idx_name, DTRIE_FILE);
+
+        struct dtrie *newdt = dtrie_new(path, si->boolid2bmap_dbi, si->txn);
+        struct dtrie *olddt = si->trie;
+        app_add_freejob(shard->index->app, FREE_TRIE, olddt);
+        si->trie = newdt;
+    }
+ 
     mdb_txn_commit(si->txn);
 }
 
 void sindex_free(struct sindex *si) {
     mdb_env_close(si->env);
-    dtrie_free(si->trie);
+    if (si->trie) {
+        dtrie_free(si->trie);
+    }
     free(si);
 }
 

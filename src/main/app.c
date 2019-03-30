@@ -42,11 +42,42 @@ const char *permission_str[] = {
     "queryIndex",
 };
 
+
+static void app_free_job(struct app *c) {
+    // job has been added
+    // Process only one free job every timeout.  We are not in a hurry to
+    // free
+    // TODO: make sure APP_TIMER_SECS has passed before free
+    WRLOCK(&c->free_lock);
+    if (!c->fjob_head) goto unlock;
+    struct free_job *fj = c->fjob_head;
+    // Incase this is the last job..
+    if (c->fjob_head == c->fjob_tail) {
+        c->fjob_head = c->fjob_tail = NULL;
+    } else {
+        // Else, move the head
+        c->fjob_head = fj->next;
+    }
+    // Do the actual free
+    switch(fj->type) {
+        case FREE_TRIE:
+            dtrie_free(fj->ptr_to_free);
+            break;
+        case FREE_BMAP:
+            bmap_free(fj->ptr_to_free);
+            break;
+    }
+    free(fj);
+unlock:
+    UNLOCK(&c->free_lock);
+}
+
 /* NOTE: This gets called every 5 seconds */
 static void app_timer_callback(h2o_timeout_entry_t *entry) {
     M_DBG("App timeout!");
     struct app_timeout *at = (struct app_timeout *)entry;
     struct app *a = at->app;
+    app_free_job(a);
     // restart the timer
     h2o_timeout_link(g_h2o_ctx->loop, &a->timeout, &a->timeout_entry.te);
 }
@@ -525,6 +556,25 @@ static void app_load_keys(struct app *a) {
              path, url_cbdata_new(delete_key, a));
 }
 
+void app_add_freejob(struct app *a, FREE_JOB_TYPE type, void *ptr) {
+    struct free_job *fj = calloc(1, sizeof(struct free_job));
+    fj->type = type;
+    fj->ptr_to_free = ptr;
+    // Start time
+    gettimeofday(&fj->time_added, NULL);
+    WRLOCK(&a->free_lock);
+    // If nothing exists, add it and set head and tail to fj
+    if (!a->fjob_head) {
+        a->fjob_head = fj;
+        a->fjob_tail = fj;
+    } else if (a->fjob_tail) {
+        a->fjob_tail->next = fj;
+        a->fjob_tail = fj;
+    }
+    UNLOCK(&a->free_lock);
+}
+
+
 /* Creates a new app or loads an existing app */
 struct app *app_new(const char *name, const char *appid, const char *apikey) {
     struct app *a = calloc(1, sizeof(struct app));
@@ -548,6 +598,7 @@ struct app *app_new(const char *name, const char *appid, const char *apikey) {
                           URL_KEYS, url_cbdata_new(list_keys, a));
 
     kv_init(a->indexes);
+    INITLOCK(&a->free_lock);
     app_setup_timeouts(a);
 
     // Load all indexes managed by the app after everything else is complete
@@ -577,6 +628,12 @@ void app_free(struct app *a) {
     // remove linked timeouts
     h2o_timeout_unlink(&a->timeout_entry.te);
     h2o_timeout_dispose(g_h2o_ctx->loop, &a->timeout);
+
+    // Handle free jobs
+    while (a->fjob_head) {
+        app_free_job(a);
+    }
+    DESTROYLOCK(&a->free_lock);
     // finally free the app
     free(a);
 }

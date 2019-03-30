@@ -18,6 +18,8 @@ struct rank_iter {
     struct bmap *dbmap;
     struct docrank *ranks;
     struct squery *sq;
+    int skip_counter;
+    int skip_count;
     uint32_t rankpos;
 };
 

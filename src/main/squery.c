@@ -74,6 +74,7 @@ static void process_termresult(struct squery *sq, struct sindex *si, struct term
     // we do not have any documents matching that term
     if ((tr->twid == 0) && (kh_size(tr->wordids) == 0)) {
         td->tbmap = bmap_new();
+        td->tzero_typo_bmap = bmap_new();
         return;
     }
 
@@ -82,6 +83,8 @@ static void process_termresult(struct squery *sq, struct sindex *si, struct term
     // We will need to load the words under this top level id though
     if (tr->twid) {
         td->tbmap = get_twid_to_docids(sq, si, tr->twid);
+        // Top level word ids have zero typos, so just set it
+        td->tzero_typo_bmap = get_twid_to_docids(sq, si, tr->twid);
         // If we have docids under this twid, let us get all the words that are under it
         if (bmap_cardinality(td->tbmap)) {
             set_wids_under_twid(sq, si, tr);
@@ -90,6 +93,7 @@ static void process_termresult(struct squery *sq, struct sindex *si, struct term
         // TODO: we may have to delete some words if we do not have results
         // especially when we start handling matches in particular fields only
         struct oper *o = oper_new();
+        struct oper *oz = oper_new();
         uint32_t wid;
         int dist;
         khash_t(WID2TYPOS) *all_wordids = sq->sqres->all_wordids;
@@ -98,10 +102,18 @@ static void process_termresult(struct squery *sq, struct sindex *si, struct term
             if (b) {
                 add_wid_dist_to_wordids(wid, dist, all_wordids);
                 oper_add(o, b);
+                // Track documents with no typos
+                if (dist == 0) {
+                    oper_add(oz, b);
+                }
             }
         });
         td->tbmap = oper_or(o);
+        td->tzero_typo_bmap = oper_or(oz);
+        // Free operation and all bitmaps under it
         oper_total_free(o);
+        // Free just the operation, the zero typo bitmaps have already been freed
+        oper_free(oz);
     }
 
 #ifdef TRACK_WIDS
@@ -142,9 +154,11 @@ static void lookup_terms(struct squery *sq, struct sindex *si) {
         dump_bmap(td->tbmap);
     }
 
+    // Get exact matches for words
     for (int i = 0; i < sq->q->num_words; i++) {
         uint32_t wid = dtrie_lookup_exact(si->trie, kv_A(sq->q->words,i));
         if (wid) {
+            M_INFO("Exact wid is %u", wid);
             // TODO: Handle field restricted queries
             sqres->exact_docid_map[i] = mbmap_load_bmap(sq->txn, si->wid2bmap_dbi, IDPRIORITY(wid, 0));
         }
@@ -163,6 +177,27 @@ static struct bmap *get_term_docids(struct squery_result *sqres, int term_pos, i
 
     if (term_pos < num_terms - 2) {
         oper_add(o, sqres->termdata[term_pos + 1].tbmap);
+    }
+
+    struct bmap *ret = oper_or(o);
+    oper_free(o);
+
+    return ret;
+}
+
+// Same as above with zero typo doc ids
+static struct bmap *get_term_zero_typo_docids(struct squery_result *sqres, int term_pos, 
+        int num_terms) {
+    struct oper *o = oper_new();
+    /* (anew | new | newhope) */ 
+    if (term_pos > 0) {
+        oper_add(o, sqres->termdata[term_pos - 1].tzero_typo_bmap);
+    }
+
+    oper_add(o, sqres->termdata[term_pos].tzero_typo_bmap);
+
+    if (term_pos < num_terms - 2) {
+        oper_add(o, sqres->termdata[term_pos + 1].tzero_typo_bmap);
     }
 
     struct bmap *ret = oper_or(o);
@@ -238,9 +273,61 @@ last_term:
     return ret;
 }
 
+// Same as above for zero typo docids
+static struct bmap *get_matching_zero_typo_docids(struct squery *sq) {
+    int num_terms = kv_size(sq->q->terms);
+    struct squery_result *sqres = sq->sqres;
+
+    // This happens when the query text is empty or not set
+    if (num_terms == 0) {
+        // Send all available docids
+        return shard_get_all_docids(sq->shard);
+    }
+
+    // This happens when the query text is a single word
+    if (num_terms == 1) {
+        termdata_t *td = &sqres->termdata[0];
+        return bmap_duplicate(td->tzero_typo_bmap);
+    }
+
+    struct bmap *ret = NULL;
+    // This happens when query text is 2 words
+    // 'a new' => (a & new) | anew 
+    if (num_terms == 3) {
+        ret = bmap_and(sqres->termdata[0].tzero_typo_bmap, sqres->termdata[1].tzero_typo_bmap);
+        // Handle the last term
+        goto last_term;
+    }
+
+    struct oper *o = oper_new();
+    for (int i = 0; i < num_terms; i += 2) {
+        struct bmap *b = get_term_zero_typo_docids(sqres, i, num_terms);
+        oper_add(o, b);
+    }
+    // We have been matching data until now
+    ret = oper_and(o);
+    oper_total_free(o);
+
+last_term:
+    // Finally or with the last combined terms search
+    // Only process if we have any results for the combined terms search
+    if (bmap_cardinality(sqres->termdata[num_terms-1].tzero_typo_bmap)) {
+        // TODO: Implement bmap_inplace_or !
+        struct oper *o = oper_new();
+        oper_add(o, ret);
+        oper_add(o, sqres->termdata[num_terms-1].tzero_typo_bmap);
+        struct bmap *temp_ret = oper_or(o);
+        oper_free(o);
+        bmap_free(ret);
+        ret = temp_ret;
+    }
+    return ret;
+}
+
 static void termdata_free(termdata_t *td) {
     termresult_free(td->tresult);
     bmap_free(td->tbmap);
+    bmap_free(td->tzero_typo_bmap);
 }
 
 void sqresult_free(struct query *q, struct squery_result *sqres) {
@@ -300,6 +387,20 @@ static void squery_apply_filters(struct squery *sq) {
     filter_free(sf);
 }
 
+
+static uint32_t get_facet_totalcount(struct squery *sq, uint32_t facet_id, 
+        int priority, struct bmap *rbmap) {
+    uint32_t result = 0;
+    uint64_t fhid = IDPRIORITY(facet_id, priority);
+    struct bmap *tbmap = mbmap_load_bmap(sq->txn, sq->shard->sindex->facetid2bmap_dbi, fhid);
+    if (tbmap) {
+        result = bmap_and_cardinality(tbmap, rbmap);
+        bmap_free(tbmap);
+    }
+    return result;
+}
+
+
 static struct facet_count **sort_facets(struct squery *sq) {
     struct mapping *m = sq->q->in->mapping;
     struct facet_count **fc = calloc(m->num_facets, sizeof(struct facet_count *));
@@ -320,19 +421,30 @@ static struct facet_count **sort_facets(struct squery *sq) {
             }
         }
 
-        int rcount = sq->q->cfg.max_facet_results;
-        // If we have too many facet results, partial sort to count required
-        if (h->m_population > sq->q->cfg.max_facet_results) {
-            ks_partialsort(facet_sort, fc[i], 0, h->m_population-1, sq->q->cfg.max_facet_results);
+        // Take twice the max facet results
+        int rcount = sq->q->cfg.max_facet_results * 2;
+        if (h->m_population > rcount) {
+            ks_partialsort(facet_sort, fc[i], 0, h->m_population-1, rcount);
         } else {
             rcount = h->m_population;
         }
+
+        // If we did a fast rank, find the accurate facet counts as we skipped many documents
+        if (sq->fast_rank) {
+            // Get actual facet counts
+            for (int x = 0; x < rcount; x++) {
+                fc[i][x].count = get_facet_totalcount(sq, fc[i][x].facet_id, i, 
+                        sq->sqres->docid_map);
+            }
+        } 
 
         // Set shard_id for necessary results
         for (int x = 0; x < rcount; x++) {
             fc[i][x].shard_id = sq->shard_idx;
         }
 
+        // Store the count of facets that actually matter
+        sq->sqres->fh[i].rcount = rcount;
     }
     return fc;
 }
@@ -363,6 +475,9 @@ void execute_squery(void *w) {
     sq->sqres->docid_map = get_matching_docids(sq);
     trace_query("Lookup documents in", &start);
 
+    // From the term data, find all documents with zero typos matching our query
+    sq->sqres->zero_typo_docid_map = get_matching_zero_typo_docids(sq);
+
     // Apply filters
     if (sq->q->filter) {
         squery_apply_filters(sq);
@@ -386,7 +501,9 @@ void execute_squery(void *w) {
     trace_query("Ranks sorted in", &start);
     sq->sqres->ranks = ranks;
 
+    // Free docid maps
     bmap_free(sq->sqres->docid_map);
+    bmap_free(sq->sqres->zero_typo_docid_map);
 
     // cleanup all termdata
     for (int i = 0; i < num_terms; i++) {

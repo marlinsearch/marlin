@@ -442,12 +442,23 @@ static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg
             const char *err = cfg_set_rank_sort_field(qcfg, m, value, true);
             if (err) return err;
         }
+        // fullScan
+        if (strcmp(J_S_FULLSCAN, key) == 0) {
+            qcfg->full_scan = json_is_true(value);
+        }
+        // fullScanThreshold
+        if (strcmp(J_S_FULLSCAN_THRES, key) == 0) {
+            qcfg->full_scan_threshold = json_number_value(value);
+        }
     }
     if (qcfg->hits_per_page > qcfg->max_hits) {
         return "Hits per page cannot be more than maximum hits";
     }
     if (qcfg->max_hits > MAX_HITS_LIMIT) {
         return "Maximum hits cannot be more than 1000";
+    }
+    if (qcfg->full_scan_threshold < MAX_HITS_LIMIT * 5) {
+        return "Full scan threshold cannot be less than 5000";
     }
     return NULL;
 }
@@ -466,6 +477,8 @@ static int index_load_json_settings(struct index *in, json_t *j) {
         if ((strcmp(J_S_MAX_FACET_RESULTS, key) == 0) && !json_is_number(value)) return -1;
         if ((strcmp(J_S_RANK_BY, key) == 0) && !json_is_object(value)) return -1;
         if ((strcmp(J_S_SORT_BY, key) == 0) && !json_is_object(value)) return -1;
+        if ((strcmp(J_S_FULLSCAN, key) == 0) && !json_is_boolean(value)) return -1;
+        if ((strcmp(J_S_FULLSCAN_THRES, key) == 0) && !json_is_number(value)) return -1;
     }
     // Now do the actual parsing of settings
     int changed = 0;
@@ -511,6 +524,9 @@ static char *index_settings_to_json(const struct index *in) {
     json_object_set_new(jo, J_S_HITS_PER_PAGE, json_integer(qcfg->hits_per_page));
     json_object_set_new(jo, J_S_MAX_HITS, json_integer(qcfg->max_hits));
     json_object_set_new(jo, J_S_MAX_FACET_RESULTS, json_integer(qcfg->max_facet_results));
+    json_object_set_new(jo, J_S_FULLSCAN, json_boolean(qcfg->full_scan));
+    json_object_set_new(jo, J_S_FULLSCAN_THRES, json_integer(qcfg->full_scan_threshold));
+
     // Save rules
     json_t *jr = json_array();
     json_object_set_new(jo, J_S_RANKALGO, jr);
@@ -614,9 +630,21 @@ static char *index_delete_callback(h2o_req_t *req, void *data) {
     }
 }
 
+static void index_destroy_threadpool(struct index *in) {
+    WRLOCK(&in->wpool_lock);
+    if (in->wpool) {
+        M_INFO("Destroying threadpool for index %s", in->name);
+        // TODO: Free threadpool jobs if any
+        threadpool_destroy(in->wpool, 0);
+        in->wpool = NULL;
+    }
+    UNLOCK(&in->wpool_lock);
+}
+
 // TODO: This should be a clear job as requests may be in progress?
 static char *index_clear_callback(h2o_req_t *req, void *data) {
     struct index *in = data;
+    index_destroy_threadpool(in);
     for (int i = 0; i < in->num_shards; i++) {
         struct shard *s = kv_A(in->shards, i);
         shard_clear(s);
@@ -1031,6 +1059,7 @@ static struct query_cfg *query_config_new(void) {
     struct query_cfg *qcfg = calloc(1, sizeof(struct query_cfg));
     qcfg->hits_per_page = DEF_HITS_PER_PAGE;
     qcfg->max_facet_results = DEF_FACET_RESULTS;
+    qcfg->full_scan_threshold = DEF_FULLSCAN_THRES;
     qcfg->max_hits = DEF_MAX_HITS;
     qcfg->rank_by = -1;         // Rank by no fields
     qcfg->rank_sort = false;    // Apply ranking finally
@@ -1092,17 +1121,6 @@ struct index *index_new(const char *name, struct app *a, int num_shards) {
     return in;
 }
 
-static void index_destroy_threadpool(struct index *in) {
-    WRLOCK(&in->wpool_lock);
-    if (in->wpool) {
-        M_INFO("Destroying threadpool for index %s", in->name);
-        // TODO: Free threadpool jobs if any
-        threadpool_destroy(in->wpool, 0);
-        in->wpool = NULL;
-    }
-    UNLOCK(&in->wpool_lock);
-}
-
 static void free_kvec_strings(void *kv) {
     kvec_t(char *) *fields = kv;
     while (kv_size(*fields) > 0) {
@@ -1137,15 +1155,6 @@ void index_free(struct index *in) {
     free_kvec_strings(&in->cfg.facet_fields);
     free_query_cfg(in->cfg.qcfg);
     free(in);
-}
-
-void index_clear(struct index *in) {
-    index_destroy_threadpool(in);
-    // Just clear all the shards after destroying the threadpool
-    for (int i = 0; i < in->num_shards; i++) {
-        struct shard *s = kv_A(in->shards, i);
-        shard_clear(s);
-    }
 }
 
 void index_delete(struct index *in) {

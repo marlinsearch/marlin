@@ -51,6 +51,12 @@ Test maxFacetResults
     Output
     Integer     response status     200
     Integer     $.totalHits         5
+    Set Headers  ${appheader}
+    POST         /1/indexes/testindex/query  {"maxFacetResults": 1000}
+    Output
+    Integer     response status     200
+    Integer     $.totalHits         5
+
 
 
 Delete the index

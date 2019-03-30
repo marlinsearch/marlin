@@ -2,7 +2,7 @@
 Resource  common.robot
 
 *** Variables ***
-${settings}     {"indexedFields": ["str"] }
+${settings}     {"indexedFields": ["str", "str2", "str3"] }
 ${index}  {"name" : "testindex", "numShards": 1}
 
 *** Test Cases ***
@@ -23,11 +23,7 @@ Configure the index
 Load some data
     @{json_data}  Set Variable   
        ...  [
-       ...   {"str": "why is this my best day"},
-       ...   {"str": "this is why then my"},
-       ...   {"str": "why my test me"},
-       ...   {"str": "this is a new a new whymy"},
-       ...   {"str": "mya what is then blah whys this"}
+       ...   {"str": "aa bb cc", "str2": "dd ee ff", "str3": "gg hh ii"}
        ...  ]
     ${json_str}     Catenate    @{json_data}
 
@@ -36,29 +32,40 @@ Load some data
     Integer     response status     200
     Wait Until Keyword Succeeds	100x	10ms   No Jobs
 
-Test query whys my
-    POST         /1/indexes/testindex/query  {"q": "whys my", "explain": true}
-    Integer     response status     200
-    Integer     $.totalHits         4
-    Integer     $.hits[0]._explain.typos        0
-    Integer     $.hits[0]._explain.position     1
-    Integer     $.hits[0]._explain.proximity    5
-    Integer     $.hits[0]._explain.exact        1
-    Integer     $.hits[1]._explain.exact        1
-    Integer     $.hits[1]._explain.typos        1
-
-Test query why my
-    POST         /1/indexes/testindex/query  {"q": "why my", "explain": true}
-    Integer     response status     200
-    Integer     response status     200
-    Integer     $.totalHits         4
-
-Test query a
-    POST         /1/indexes/testindex/query  {"q": "a new", "explain": true}
-    Output
+Test query empty
+    POST         /1/indexes/testindex/query  {"explain": true}
     Integer     response status     200
     Integer     $.totalHits         1
 
+Test query aa
+    POST         /1/indexes/testindex/query  {"q": "aa", "explain": true}
+    Integer     response status     200
+    Integer     $.totalHits         1
+    Integer     $.hits[0]._explain.field     0
+
+Test query aa bb
+    POST         /1/indexes/testindex/query  {"q": "aa bb", "explain": true}
+    Integer     response status     200
+    Integer     $.totalHits         1
+    Integer     $.hits[0]._explain.field     0
+
+Test query aa dd
+    POST         /1/indexes/testindex/query  {"q": "aa dd", "explain": true}
+    Integer     response status     200
+    Integer     $.totalHits         1
+    Integer     $.hits[0]._explain.field     0
+
+Test query bb hh
+    POST         /1/indexes/testindex/query  {"q": "bb hh", "explain": true}
+    Integer     response status     200
+    Integer     $.totalHits         1
+    Integer     $.hits[0]._explain.field     0
+
+Test query ee hh
+    POST         /1/indexes/testindex/query  {"q": "ee hh", "explain": true}
+    Integer     response status     200
+    Integer     $.totalHits         1
+    Integer     $.hits[0]._explain.field     1
 
 Delete the index
     DELETE      /1/indexes/testindex

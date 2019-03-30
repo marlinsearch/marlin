@@ -45,9 +45,11 @@ struct query_cfg {
     uint16_t max_facet_results;
     int num_rules;
     char rank_by_field[MAX_FIELD_NAME];
-    int rank_by;   // Field on which ranking has to be performed
+    int rank_by;        // Field on which ranking has to be performed
     bool rank_sort;     // Sort by the field or use it to rank finally
     bool rank_asc;      // Rank by ascending or descending order
+    bool full_scan;     // Do we want to scan all documents before a result?
+    uint32_t full_scan_threshold; // Threshold under which a full scan is performed
     SORT_RULE  rank_algo[R_MAX + 1]; // Ranking algorithm
 
     int *facet_enabled;

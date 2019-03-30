@@ -69,7 +69,7 @@ void shard_clear(struct shard *s) {
     // Clear the shard data
     sdata_clear(s->sdata);
     // Now clear the search index
-    sindex_clear(s->sindex);
+    sindex_clear(s->sindex, 0);
 }
 
 void shard_delete(struct shard *s) {

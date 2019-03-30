@@ -10,11 +10,27 @@
 #define MAX_APP_NAME    32
 #define APP_TIMER_SECS  5
 
+typedef enum free_job_type {
+    FREE_TRIE,
+    FREE_BMAP,
+} FREE_JOB_TYPE;
+
+
 /* Used for periodic h2o timer */
 struct app_timeout {
     h2o_timeout_entry_t te;
     void *app;
 };
+
+// A free job takes care of freeing stuff
+// in a delayed manner.
+struct free_job {
+    FREE_JOB_TYPE type;
+    void *ptr_to_free;
+    struct timeval time_added;
+    struct free_job *next;
+};
+
 
 /* An app is a group of indices with its own appid / key and set of child keys */
 struct app {
@@ -27,6 +43,11 @@ struct app {
     struct app_timeout timeout_entry;
     kvec_t(struct key *) keys;
 
+    // Free job handling
+    struct free_job *fjob_head;
+    struct free_job *fjob_tail;
+    pthread_rwlock_t free_lock;
+
     // The indices this app manages
     kvec_t(struct index *) indexes;
 };
@@ -36,5 +57,6 @@ void app_free(struct app *a);
 void app_delete(struct app *a);
 bool app_delete_index(struct app *a, struct index *in);
 void app_index_apply_allkeys(struct app *a, struct index *in);
+void app_add_freejob(struct app *a, FREE_JOB_TYPE type, void *ptr);
 
 #endif

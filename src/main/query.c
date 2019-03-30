@@ -41,32 +41,26 @@ static struct facet_count *process_facet_results(struct squery *sq, int f, int *
     // This is a simpler case, when we have a single shard, Just
     // sort the result count and return
     if (q->in->num_shards == 1) {
-        struct hashtable *h = sq[0].sqres->fh[f].h;
-        if (h->m_population > q->cfg.max_facet_results) {
-            // We have already partially sorted to max_facet_results
-            // we just need to sort the top n results.
-            rcount = q->cfg.max_facet_results;
-        } else {
-            rcount = h->m_population;
-        }
+        int rcount = sq[0].sqres->fh[f].rcount;
+        // Sort the results
         ks_introsort(facetsort, rcount, sq[0].sqres->fc[f]);
         fc = sq[0].sqres->fc[f];
+        // Limit result count to max facet results
+        if (rcount > q->cfg.max_facet_results) {
+            rcount = q->cfg.max_facet_results;
+        }
         *count = rcount;
         return fc;
     }
+
     // Merge results use a hashtable to store position in a 
     // preallocated fc array.
     // Allocate an array big enough to handle the worst case scenario
-    fc = malloc(sizeof(struct facet_count) * q->in->num_shards * q->cfg.max_facet_results);
+    fc = malloc(sizeof(struct facet_count) * q->in->num_shards * q->cfg.max_facet_results * 2);
     struct hashtable *h = hashtable_new(512);
     for (int i = 0; i < q->in->num_shards; i++) {
         struct squery_result *sqres = sq[i].sqres;
-        int size;
-        if (sqres->fh[f].h->m_population > q->cfg.max_facet_results) {
-            size = q->cfg.max_facet_results;
-        } else {
-            size = sqres->fh[f].h->m_population;
-        }
+        int size = sqres->fh[f].rcount;
         for (int j = 0; j < size; j++) {
             struct facet_count *ifc = &sqres->fc[f][j];
             struct cell *c;
@@ -74,6 +68,7 @@ static struct facet_count *process_facet_results(struct squery *sq, int f, int *
             if ((c = hashtable_lookup(h, ifc->facet_id)) != NULL) {
                 fc[c->value].count += ifc->count;
             } else {
+                // Add the facet data
                 c = hashtable_insert(h, ifc->facet_id);
                 memcpy(&fc[rcount], ifc, sizeof(struct facet_count));
                 c->value = rcount;
@@ -81,8 +76,11 @@ static struct facet_count *process_facet_results(struct squery *sq, int f, int *
             }
         }
     }
+
     // Now sort the results
     ks_introsort(facetsort, rcount, fc);
+
+    // Limit result count to max facet results
     if (rcount > q->cfg.max_facet_results) {
         rcount = q->cfg.max_facet_results;
     }
@@ -150,6 +148,8 @@ static json_t *form_result(struct query *q, struct squery *sq) {
     // Process response within shardquery
     int total_hits = 0;
     int total_ranks = 0;
+    bool fullScan = true; 
+
     for (int i = 0; i < q->in->num_shards; i++) {
         M_DBG("Num hits from shard %d is %lu", i, sq[i].sqres->num_hits);
         total_hits += sq[i].sqres->num_hits;
@@ -183,6 +183,9 @@ static json_t *form_result(struct query *q, struct squery *sq) {
                 sq[0].sqres->ranks[j].shard_id = 0;
             }
         }
+        if (sq[0].fast_rank) {
+            fullScan = false;
+        }
     } else {
         // If we have more than one shard, allocate data to combine all shard results
         ranks = malloc(sizeof(struct docrank) * total_ranks);
@@ -195,6 +198,9 @@ static json_t *form_result(struct query *q, struct squery *sq) {
             // Now copy shard ranks to full ranks
             memcpy(&ranks[pos], sq[i].sqres->ranks, sq[i].sqres->rank_count * sizeof(struct docrank));
             pos += sq[i].sqres->rank_count;
+            if (sq[i].fast_rank) {
+                fullScan = false;
+            }
         }
         M_DBG("Sorting %d hits\n", total_ranks);
         rank_sort(total_ranks, ranks, q->rank_rule);
@@ -231,6 +237,8 @@ static json_t *form_result(struct query *q, struct squery *sq) {
     json_object_set_new(j, J_R_PAGE, json_integer(q->page_num));
     json_object_set_new(j, J_R_NUMPAGES, json_integer(LIKELY(q->cfg.hits_per_page)?((float)max_hits/q->cfg.hits_per_page) + 0.9999:0));
     json_object_set_new(j, J_R_HITS, jhits);
+    json_object_set_new(j, J_R_QUERYTEXT, json_string(q->text));
+    json_object_set_new(j, J_S_FULLSCAN, json_boolean(fullScan));
     return j;
 }
 

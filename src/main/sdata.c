@@ -291,8 +291,14 @@ void sdata_clear(struct sdata *sd) {
         M_ERR("Failed to drop usedfree dbi %d %s", rc, mdb_strerror(rc));
     }
     mdb_txn_commit(sd->txn);
-    bmap_free(sd->used_bmap);
-    bmap_free(sd->free_bmap);
+    struct bmap *oused_bmap = sd->used_bmap;
+    struct bmap *ofree_bmap = sd->free_bmap;
+
+    // Queries may still be using these, free them later
+    // TODO: lock ?
+    app_add_freejob(sd->shard->index->app, FREE_BMAP, oused_bmap);
+    app_add_freejob(sd->shard->index->app, FREE_BMAP, ofree_bmap);
+
     sd->used_bmap = bmap_new();
     sd->free_bmap = bmap_new();
     sd->last_docid = 1;

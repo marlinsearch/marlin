@@ -1,6 +1,10 @@
 *** Settings ***
 Resource  common.robot
 
+
+*** Variables ***
+${index}  {"name" : "testindex", "numShards": 1}
+
 *** Test Cases ***
 Create a new application
     Set Headers  ${header}
@@ -20,7 +24,7 @@ Configure the index
 Load some data
     ${testjson}  Input  ${CURDIR}/../test.json
     Set Headers  ${appheader}
-    POST         /1/indexes/testindex  ${testjson}[data][0:1000]
+    POST         /1/indexes/testindex  ${testjson}[data][0:6000]
     Integer     response status     200
     Wait Until Keyword Succeeds	100x	10ms   No Jobs
 
@@ -29,7 +33,24 @@ Test an empty query
     Set Headers  ${appheader}
     POST         /1/indexes/testindex/query  {"q": ""}
     Integer     response status     200
-    Integer     $.totalHits         1000
+    Integer     $.totalHits         6000
+
+Configure full scan threshold
+    Set Headers  ${appheader}
+    POST        /1/indexes/testindex/settings         {"fullScanThreshold": 5000, "rankBy": {"num": "asc"}}
+    Integer     response status     200
+
+Get settings the index
+    Set Headers  ${appheader}
+    GET         /1/indexes/testindex/settings
+    Integer     response status     200
+
+Test another empty query
+    ${testjson}  Input  ${CURDIR}/../test.json
+    Set Headers  ${appheader}
+    POST         /1/indexes/testindex/query  {"q": ""}
+    Integer     response status     200
+    Integer     $.totalHits         6000
 
 Delete the index
     Set Headers  ${appheader}
