@@ -148,6 +148,8 @@ static json_t *form_result(struct query *q, struct squery *sq) {
     // Process response within shardquery
     int total_hits = 0;
     int total_ranks = 0;
+    bool fullScan = true; 
+
     for (int i = 0; i < q->in->num_shards; i++) {
         M_DBG("Num hits from shard %d is %lu", i, sq[i].sqres->num_hits);
         total_hits += sq[i].sqres->num_hits;
@@ -181,6 +183,9 @@ static json_t *form_result(struct query *q, struct squery *sq) {
                 sq[0].sqres->ranks[j].shard_id = 0;
             }
         }
+        if (sq[0].fast_rank) {
+            fullScan = false;
+        }
     } else {
         // If we have more than one shard, allocate data to combine all shard results
         ranks = malloc(sizeof(struct docrank) * total_ranks);
@@ -193,6 +198,9 @@ static json_t *form_result(struct query *q, struct squery *sq) {
             // Now copy shard ranks to full ranks
             memcpy(&ranks[pos], sq[i].sqres->ranks, sq[i].sqres->rank_count * sizeof(struct docrank));
             pos += sq[i].sqres->rank_count;
+            if (sq[i].fast_rank) {
+                fullScan = false;
+            }
         }
         M_DBG("Sorting %d hits\n", total_ranks);
         rank_sort(total_ranks, ranks, q->rank_rule);
@@ -230,6 +238,7 @@ static json_t *form_result(struct query *q, struct squery *sq) {
     json_object_set_new(j, J_R_NUMPAGES, json_integer(LIKELY(q->cfg.hits_per_page)?((float)max_hits/q->cfg.hits_per_page) + 0.9999:0));
     json_object_set_new(j, J_R_HITS, jhits);
     json_object_set_new(j, J_R_QUERYTEXT, json_string(q->text));
+    json_object_set_new(j, J_S_FULLSCAN, json_boolean(fullScan));
     return j;
 }
 
