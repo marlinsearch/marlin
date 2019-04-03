@@ -38,7 +38,6 @@ Load some data
 
 Test query a new
     POST         /1/indexes/testindex/query  {"q": "new this", "explain": true}
-    Output
     Integer     response status     200
     Integer     $.totalHits         1
     Integer     $.hits[0]._explain.field     0

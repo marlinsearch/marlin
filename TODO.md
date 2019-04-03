@@ -10,10 +10,10 @@
 - [x] Partial Scanning during queries
 - [ ] Documentation
 - [ ] Website
-- [ ] Mapping updates on reconfiguration
 - [ ] Highlighting
 - [ ] Snippets
 - [ ] Reindexing
+- [ ] Mapping updates on reconfiguration
 
 ### TODO 0.2
 
@@ -37,6 +37,9 @@
 - [ ] Synonyms
 - [ ] Group results
 
+### TODO 0.4
+- [ ] Split word match 'setup' matches 'set up' 
+
 ### TODO 1.0
 
 - [ ] WAL
@@ -47,12 +50,14 @@
 
 - [ ] Clustering
 - [ ] dtrie rewrite
+- [ ] analyzer rewrite
 - [ ] Simple SQL queries
 
 ### Refactor
 
 - [ ] http_error / api_bad_request use just one
 - [ ] dtrie - msync
+- [ ] Analyzers - Rewrite
 
 ### Bugs
 
@@ -62,6 +67,7 @@
 
 ### In Progress
 
+- Highlighting
 - Documentation
 - Website
 

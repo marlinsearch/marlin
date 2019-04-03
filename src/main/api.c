@@ -492,7 +492,7 @@ void *run_loop(void *_thread_index) {
 
     if (thread_index == 0) {
         sleep(1);
-        M_INFO("Shutting down h2o request thread");
+        M_INFO("Shutting down request thread");
     } else {
         pthread_exit(0);
     }
