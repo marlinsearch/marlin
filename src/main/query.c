@@ -5,6 +5,7 @@
 #include "filter.h"
 #include "debug.h"
 #include "hashtable.h"
+#include "highlight.h"
 
 #define facetgt(a, b) ((a).count > (b).count)
 KSORT_INIT(facetsort, facet_count_t, facetgt)
@@ -213,6 +214,10 @@ static json_t *form_result(struct query *q, struct squery *sq) {
             json_error_t error;
             json_t *hit = json_loads(o, 0, &error);
             if (hit) {
+                const char *title = json_string_value(json_object_get(hit, "title"));
+                if (title) {
+                    highlight(title, q, 4);
+                }
                 if (q->explain) {
                     explain_rank(q, hit, &ranks[i]);
                 }

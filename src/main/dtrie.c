@@ -765,7 +765,8 @@ static void lookup_typo(struct dtrie *dt, term_t *t, termresult_t *tr) {
     // Set the max distance based on word length
     // TODO: Make word distance configurable and send during lookup request
     int wlen = t->word->length;
-    int maxdist = (wlen > 7)?2:1;
+    // TODO: Make it configurable
+    int maxdist = (wlen > 3) ? ((wlen > 7) ? 2 : 1) : 0;
     // Do a Dam-Levenshtein lookup
     struct lev_data ld;
     ld.maxdist = maxdist;
