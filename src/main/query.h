@@ -35,6 +35,14 @@ typedef enum typos_type {
     TYPO_MAX
 } TYPO_TYPE;
 
+// Holds fields together for limited retrieval, highlighting etc.,
+struct field {
+    char name[MAX_FIELD_NAME];
+    int snippet;
+    struct field *next;
+    struct field *child;
+};
+
 /* Query configuration for an index */
 struct query_cfg {
     PREFIX_TYPE prefix;
@@ -52,6 +60,10 @@ struct query_cfg {
     uint32_t full_scan_threshold; // Threshold under which a full scan is performed
     SORT_RULE  rank_algo[R_MAX + 1]; // Ranking algorithm
 
+    struct field *get_fields;
+    struct field *highlight_fields;
+
+    bool highlight_source;
     int *facet_enabled;
 };
 

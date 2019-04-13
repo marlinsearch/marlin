@@ -8,12 +8,13 @@
 - [x] Keys
 - [x] Python tests
 - [x] Partial Scanning during queries
-- [ ] Documentation
-- [ ] Website
-- [ ] Highlighting
-- [ ] Snippets
+- [x] Highlighting
+- [x] Snippets
+- [x] Restrict fields to return
 - [ ] Reindexing
 - [ ] Mapping updates on reconfiguration
+- [ ] Documentation
+- [ ] Website
 
 ### TODO 0.2
 
@@ -23,7 +24,6 @@
 - [ ] Better logging
 - [ ] Delete by query
 - [ ] Restrict facets
-- [ ] Restrict fields to return
 - [ ] Restrict fields to search
 - [ ] Get specific facets, instead of everything
 - [ ] Boolean Facets
@@ -67,7 +67,6 @@
 
 ### In Progress
 
-- Highlighting
 - Documentation
 - Website
 

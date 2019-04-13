@@ -139,6 +139,13 @@ reset_word:
             len = 0;
         }
     }
+
+    // Free char_se we have been tracking
+    for (int i = 0; i < kv_size(se); i++) {
+        free(kv_A(se, i));
+    }
+    kv_destroy(se);
+
     free(map_out);
 }
 
@@ -205,6 +212,9 @@ bool is_match(struct token *token, struct search_term *t) {
     return token->is_match;
 }
 
+
+/* Highlights str with the terms in query q and snips response to snip_num_words.  If nothing
+ * is highlighted returns NULL */
 char *highlight(const char *str, struct query *q, int snip_num_words) {
     kvec_t(struct token *) tokens;
     kv_init(tokens);
@@ -265,11 +275,12 @@ char *highlight(const char *str, struct query *q, int snip_num_words) {
         }
     }
 
-    if (last_match_end == 0) return strdup(str);
+    char *resp = NULL;
+    if (last_match_end == 0) goto free_tokens;
 
     int tlen = strlen(str) + (num_matches * strlen("<em> </em>"));
 
-    char *resp = malloc(tlen);
+    resp = malloc(tlen);
     int pos = 0;
     int start = 0;
     int end = num_tokens;
@@ -312,10 +323,19 @@ char *highlight(const char *str, struct query *q, int snip_num_words) {
             pos += c->end - start;
         }
     }
-
-
     resp[pos] = '\0';
-    printf("Highlighted len %d : %s\n", pos, resp);
 
-    return NULL;
+free_tokens:
+    // Free the tokens and char_se in it
+    for (int i = 0; i < kv_size(tokens); i++) {
+        struct token *t = kv_A(tokens, i);
+        for (int j = 0; j < kv_size(t->se); j++) {
+            free(kv_A(t->se, j));
+        }
+        kv_destroy(t->se);
+        wordfree(t->word);
+        free(t);
+    }
+    kv_destroy(tokens);
+    return resp;
 }

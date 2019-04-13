@@ -396,7 +396,99 @@ static const char *cfg_set_rank_sort_field(struct query_cfg *qcfg, struct mappin
     return NULL;
 }
 
-static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg, struct mapping *m) {
+static void fields_free(struct field *l) {
+    if (l) {
+        if (l->child) fields_free(l->child);
+        if (l->next) fields_free(l->next);
+        free(l);
+    }
+}
+
+static struct field *lookup_field(struct field *f, const char *name) {
+    while (f) {
+        if (strcmp(f->name, name) == 0) {
+            return f;
+        }
+        f = f->next;
+    }
+    return NULL;
+}
+
+static void parse_field_modifiers(struct field *f) {
+    char *pos = strstr(f->name, ":");
+    if (pos) {
+        *pos = '\0';
+        pos++;
+        f->snippet = atoi(pos);
+    }
+}
+
+/* Parses limit fields eg., highlighting, retreival, facets etc., 
+ * NOTE: does not validate if field exists in schema and is correct */
+static struct field *parse_limit_fields(json_t *ja) {
+    struct field *lf = NULL, *cur = NULL;
+    size_t index;
+    json_t *value;
+    json_array_foreach(ja, index, value) {
+        if (json_is_string(value)) {
+            struct field *newlf = NULL;
+            // Make sure we have a field name
+            const char *fname = json_string_value(value);
+            if (!fname) continue;
+            // Check if it is a inner field
+            if (!strstr(fname, ".")) {
+                newlf = lookup_field(lf, fname);
+                // If not just add it
+                if (LIKELY(!newlf)) {
+                    newlf = calloc(1, sizeof(struct field));
+                } else {
+                    continue;
+                }
+                snprintf(newlf->name, sizeof(newlf->name), "%s", fname);
+                parse_field_modifiers(newlf);
+            } else {
+                // Inner field.. setup newlf, which adds it to the root if necessary
+                char *fnamecopy = strdup(fname);
+                char *token = NULL;
+                char *rest = fnamecopy;
+                struct field *fparent = NULL;
+
+                while((token = strtok_r(rest, ".", &rest))) {
+                    struct field *fnew = lookup_field(fparent ? fparent : lf, token);
+                    if (fnew) {
+                        fparent = fnew;
+                        continue;
+                    } else {
+                        fnew = calloc(1, sizeof(struct field));
+                    }
+                    snprintf(fnew->name, sizeof(fnew->name), "%s", token);
+                    parse_field_modifiers(fnew);
+
+                    if (!fparent) {
+                        newlf = fnew;
+                    } else {
+                        fnew->next = fparent->child;
+                        fparent->child = fnew;
+                    }
+                    fparent = fnew;
+                }
+                free(fnamecopy);
+            }
+            if (newlf) {
+                if (!lf) {
+                    lf = cur = newlf;
+                } else {
+                    cur->next = newlf;
+                    cur = newlf;
+                }
+            }
+        }
+    }
+    return lf;
+}
+
+
+static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg, struct mapping *m, bool config) {
     const char *key;
     json_t *value;
 
@@ -450,6 +542,18 @@ static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg
         if (strcmp(J_S_FULLSCAN_THRES, key) == 0) {
             qcfg->full_scan_threshold = json_number_value(value);
         }
+        // getFields
+        if (strcmp(J_S_GET_FIELDS, key) == 0 ) {
+            if (json_is_array(value)) {
+                if (qcfg->get_fields && config) {
+                    fields_free(qcfg->get_fields);
+                }
+                qcfg->get_fields = parse_limit_fields(value);
+            } else {
+                return "getFields needs to be a string array of fields to retrieve";
+            }
+        }
+ 
     }
     if (qcfg->hits_per_page > qcfg->max_hits) {
         return "Hits per page cannot be more than maximum hits";
@@ -479,6 +583,8 @@ static int index_load_json_settings(struct index *in, json_t *j) {
         if ((strcmp(J_S_SORT_BY, key) == 0) && !json_is_object(value)) return -1;
         if ((strcmp(J_S_FULLSCAN, key) == 0) && !json_is_boolean(value)) return -1;
         if ((strcmp(J_S_FULLSCAN_THRES, key) == 0) && !json_is_number(value)) return -1;
+        // Get fields is an array of fields or null 
+        if ((strcmp(J_S_GET_FIELDS, key) == 0) && (!json_is_array(value) || !json_is_null(value))) return -1;
     }
     // Now do the actual parsing of settings
     int changed = 0;
@@ -491,7 +597,7 @@ static int index_load_json_settings(struct index *in, json_t *j) {
         }
     }
 
-    const char *parse_fail = parse_query_settings(j, in->cfg.qcfg, in->mapping);
+    const char *parse_fail = parse_query_settings(j, in->cfg.qcfg, in->mapping, true);
     if (parse_fail) {
         M_ERR("Parse error : %s", parse_fail);
         return -1;
@@ -503,6 +609,29 @@ static int index_load_json_settings(struct index *in, json_t *j) {
         in->cfg.configured = true;
     }
     return changed;
+}
+
+/* Fills fields in array format
+ * NOTE: path needs to be of size MAX_FIELD_NAME * 10*/
+static void fill_fields(json_t *ja, struct field *f, char *path) {
+    while (f) {
+        if (f->child) {
+            if (strlen(path) > (MAX_FIELD_NAME * 9)) return;
+            strcat(path, f->name);
+            strcat(path, ".");
+            fill_fields(ja, f, path);
+            path[strlen(path) - strlen(f->name) - 1] = '\0';
+        } else {
+            if (strlen(path)) {
+                char newpath[MAX_FIELD_NAME * 10];
+                snprintf(newpath, sizeof(newpath), "%s%s", path, f->name);
+                json_array_append_new(ja, json_string(newpath));
+            } else {
+                json_array_append_new(ja, json_string(f->name));
+            }
+        }
+        f = f->next;
+    }
 }
 
 static char *index_settings_to_json(const struct index *in) {
@@ -542,6 +671,13 @@ static char *index_settings_to_json(const struct index *in) {
         json_t *jr = json_object();
         json_object_set_new(jr, qcfg->rank_by_field, json_string(qcfg->rank_asc ? ORDER_ASC : ORDER_DESC));
         json_object_set_new(jo, qcfg->rank_sort ? J_S_SORT_BY : J_S_RANK_BY, jr);
+    }
+
+    if (qcfg->get_fields) {
+        json_t *jgf = json_array();
+        json_object_set_new(jo, J_S_GET_FIELDS, jgf);
+        char buf[MAX_FIELD_NAME * 10] = "";
+        fill_fields(jgf, qcfg->get_fields, buf);
     }
  
     char *resp = json_dumps(jo, JSON_PRESERVE_ORDER|JSON_INDENT(4));
@@ -842,7 +978,7 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
         memcpy(&q->cfg, in->cfg.qcfg, sizeof(struct query_cfg));
 
         // Parse query config overrides and other query info
-        const char *fail = parse_query_settings(jq, &q->cfg, in->mapping);
+        const char *fail = parse_query_settings(jq, &q->cfg, in->mapping, false);
         if (fail) {
             response = failure_message(fail);
             req->res.status = 400;
@@ -916,6 +1052,10 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
 
 send_response:
     if (q) {
+        // Free anything that was overridden
+        if (q->cfg.get_fields != q->in->cfg.qcfg->get_fields) {
+            fields_free(q->cfg.get_fields);
+        }
         query_free(q);
     }
     json_decref(jq);
@@ -1066,6 +1206,7 @@ static struct query_cfg *query_config_new(void) {
     qcfg->rank_asc  = false;    // Rank in descending order
     qcfg->num_rules = default_num_rules;
     memcpy(qcfg->rank_algo, &default_rule, sizeof(SORT_RULE) * default_num_rules);
+    qcfg->highlight_fields = calloc(1, sizeof(struct field));
     return qcfg;
 }
 
@@ -1131,6 +1272,8 @@ static void free_kvec_strings(void *kv) {
 }
 
 static void free_query_cfg(struct query_cfg *qcfg) {
+    fields_free(qcfg->get_fields);
+    fields_free(qcfg->highlight_fields);
     free(qcfg->facet_enabled);
     free(qcfg);
 }

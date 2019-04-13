@@ -71,6 +71,7 @@
 #define J_SHARDS        "shards"
 #define J_ID            "_id"
 #define J_DOCID         "_docid"
+#define J_HIGHLIGHT     "_highlight"
 #define J_TYPE          "type"
 #define J_PROPERTIES    "properties"
 #define J_FIELDID       "fieldId"
@@ -91,6 +92,7 @@
 #define J_S_RANKALGO        "rankAlgorithm"
 #define J_S_FULLSCAN        "fullScan"
 #define J_S_FULLSCAN_THRES  "fullScanThreshold"
+#define J_S_GET_FIELDS      "getFields"
 
 
 // config / settings field names
