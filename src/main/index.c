@@ -555,6 +555,7 @@ static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg
         }
         // highlightFields
         if (strcmp(J_S_HIGHLIGHT_FIELDS, key) == 0 ) {
+            // An array of fields to highlight
             if (json_is_array(value)) {
                 if (qcfg->highlight_fields && config) {
                     fields_free(qcfg->highlight_fields);
@@ -569,8 +570,14 @@ static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg
                 } 
                 // Nothing matched, parse fields as usual
                 qcfg->highlight_fields = parse_limit_fields(value);
+            // Null to highlight nothing
+            } else if (json_is_null(value)) {
+                if (qcfg->highlight_fields && config) {
+                    fields_free(qcfg->highlight_fields);
+                }
+                qcfg->highlight_fields = NULL;
             } else {
-                return "highlightFields needs to be a string array of fields to retrieve";
+                return "highlightFields needs to be a string array of fields to highlight";
             }
         }
         // highlightSource

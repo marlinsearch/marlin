@@ -91,6 +91,13 @@ Test highlight settings
     &{res}=     POST         /1/indexes/testindex/query  {"q": "this"}
     ${c}=       Evaluate    str(${res}[body][hits][0][_highlight]).count("<em>") == 10
     Should be True      ${c}
+    POST        /1/indexes/testindex/settings   {"highlightFields": null}
+    Integer     response status     200
+    &{res}=     POST         /1/indexes/testindex/query  {"q": "this"}
+    ${c}=       Evaluate    str(${res}[body][hits][0]).count("<em>") == 0
+    Should be True      ${c}
+    POST        /1/indexes/testindex/settings   {"highlightFields": ["*"]}
+    Integer     response status     200
 
 Test get fields
     Set Headers  ${appheader}
@@ -117,7 +124,7 @@ Test get inner fields
     ${c}=       Evaluate    str(${res}[body][hits][0][_highlight]).count("<em>") == 4
     Should be True      ${c}
     &{res}=     POST         /1/indexes/testindex/query  {"q": "this", "getFields": ["objects.object.inum", "objects.word", "objects.object.iword", "word", "object.word", "object.number", "object.iobject.iword", "bigobject.levelone.leveltwo.levelthree.number"]}
-    Output
+    #Output
 
 
 Delete the index
