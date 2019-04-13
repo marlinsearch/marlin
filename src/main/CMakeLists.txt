@@ -7,7 +7,7 @@ link_directories(${CMAKE_SOURCE_DIR}/../deps/utf8proc)
 add_executable (marlin main.c marlin.c filter.c api.c app.c index.c
                 shard.c sdata.c sindex.c workers.c mapping.c bmap.c
                 cont.c dtrie.c mbmap.c query.c squery.c debug.c docrank.c
-                sort.c filter_apply.c hashtable.c)
+                sort.c filter_apply.c hashtable.c highlight.c)
 
 if (DEBUG)
     target_link_libraries (marlin LINK_PUBLIC utils analyzer libjansson.a 

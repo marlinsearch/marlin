@@ -15,4 +15,6 @@ No Jobs
     GET        /1/indexes/testindex/info
     Integer     $.numJobs           0
 
-
+Clear Index
+    Set Headers  ${appheader}
+    POST        /1/indexes/testindex/clear

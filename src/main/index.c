@@ -396,7 +396,99 @@ static const char *cfg_set_rank_sort_field(struct query_cfg *qcfg, struct mappin
     return NULL;
 }
 
-static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg, struct mapping *m) {
+static void fields_free(struct field *l) {
+    if (l) {
+        if (l->child) fields_free(l->child);
+        if (l->next) fields_free(l->next);
+        free(l);
+    }
+}
+
+static struct field *lookup_field(struct field *f, const char *name) {
+    while (f) {
+        if (strcmp(f->name, name) == 0) {
+            return f;
+        }
+        f = f->next;
+    }
+    return NULL;
+}
+
+static void parse_field_modifiers(struct field *f) {
+    char *pos = strstr(f->name, ":");
+    if (pos) {
+        *pos = '\0';
+        pos++;
+        f->snippet = atoi(pos);
+    }
+}
+
+/* Parses limit fields eg., highlighting, retreival, facets etc., 
+ * NOTE: does not validate if field exists in schema and is correct */
+static struct field *parse_limit_fields(json_t *ja) {
+    struct field *lf = NULL, *cur = NULL;
+    size_t index;
+    json_t *value;
+    json_array_foreach(ja, index, value) {
+        if (json_is_string(value)) {
+            struct field *newlf = NULL;
+            // Make sure we have a field name
+            const char *fname = json_string_value(value);
+            if (!fname) continue;
+            // Check if it is a inner field
+            if (!strstr(fname, ".")) {
+                newlf = lookup_field(lf, fname);
+                // If not just add it
+                if (LIKELY(!newlf)) {
+                    newlf = calloc(1, sizeof(struct field));
+                } else {
+                    continue;
+                }
+                snprintf(newlf->name, sizeof(newlf->name), "%s", fname);
+                parse_field_modifiers(newlf);
+            } else {
+                // Inner field.. setup newlf, which adds it to the root if necessary
+                char *fnamecopy = strdup(fname);
+                char *token = NULL;
+                char *rest = fnamecopy;
+                struct field *fparent = NULL;
+
+                while((token = strtok_r(rest, ".", &rest))) {
+                    struct field *fnew = lookup_field(fparent ? fparent : lf, token);
+                    if (fnew) {
+                        fparent = fnew;
+                        continue;
+                    } else {
+                        fnew = calloc(1, sizeof(struct field));
+                    }
+                    snprintf(fnew->name, sizeof(fnew->name), "%s", token);
+                    parse_field_modifiers(fnew);
+
+                    if (!fparent) {
+                        newlf = fnew;
+                    } else {
+                        fnew->next = fparent->child;
+                        fparent->child = fnew;
+                    }
+                    fparent = fnew;
+                }
+                free(fnamecopy);
+            }
+            if (newlf) {
+                if (!lf) {
+                    lf = cur = newlf;
+                } else {
+                    cur->next = newlf;
+                    cur = newlf;
+                }
+            }
+        }
+    }
+    return lf;
+}
+
+
+static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg, struct mapping *m, bool config) {
     const char *key;
     json_t *value;
 
@@ -450,6 +542,49 @@ static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg
         if (strcmp(J_S_FULLSCAN_THRES, key) == 0) {
             qcfg->full_scan_threshold = json_number_value(value);
         }
+        // getFields
+        if (strcmp(J_S_GET_FIELDS, key) == 0 ) {
+            if (json_is_array(value)) {
+                if (qcfg->get_fields && config) {
+                    fields_free(qcfg->get_fields);
+                }
+                qcfg->get_fields = parse_limit_fields(value);
+            } else {
+                return "getFields needs to be a string array of fields to retrieve";
+            }
+        }
+        // highlightFields
+        if (strcmp(J_S_HIGHLIGHT_FIELDS, key) == 0 ) {
+            // An array of fields to highlight
+            if (json_is_array(value)) {
+                if (qcfg->highlight_fields && config) {
+                    fields_free(qcfg->highlight_fields);
+                }
+                // ["*"] to highlight all values, handle that
+                if (json_array_size(value) == 1) {
+                    json_t *jav = json_array_get(value, 0);
+                    if (json_is_string(jav) && strcmp(json_string_value(jav), "*") == 0) {
+                        qcfg->highlight_fields = calloc(1, sizeof(struct field));
+                        continue;
+                    } 
+                } 
+                // Nothing matched, parse fields as usual
+                qcfg->highlight_fields = parse_limit_fields(value);
+            // Null to highlight nothing
+            } else if (json_is_null(value)) {
+                if (qcfg->highlight_fields && config) {
+                    fields_free(qcfg->highlight_fields);
+                }
+                qcfg->highlight_fields = NULL;
+            } else {
+                return "highlightFields needs to be a string array of fields to highlight";
+            }
+        }
+        // highlightSource
+        if (strcmp(J_S_HIGHLIGHT_SOURCE, key) == 0 ) {
+            qcfg->highlight_source = json_is_true(value);
+        }
+ 
     }
     if (qcfg->hits_per_page > qcfg->max_hits) {
         return "Hits per page cannot be more than maximum hits";
@@ -463,22 +598,50 @@ static const char *parse_query_settings(struct json_t *j, struct query_cfg *qcfg
     return NULL;
 }
 
-static int index_load_json_settings(struct index *in, json_t *j) {
+static const char *index_load_json_settings(struct index *in, json_t *j, int *c) {
     const char *key;
     json_t *value;
     // Make sure we are getting valid settings first
     // Validation here
-    // TODO: Return proper error message on validation failures
     json_object_foreach(j, key, value) {
-        if ((strcmp(J_S_INDEXFIELDS, key) == 0) && !is_json_string_array(value)) return -1;
-        if ((strcmp(J_S_FACETFIELDS, key) == 0) && !is_json_string_array(value)) return -1;
-        if ((strcmp(J_S_HITS_PER_PAGE, key) == 0) && !json_is_number(value)) return -1;
-        if ((strcmp(J_S_MAX_HITS, key) == 0) && !json_is_number(value)) return -1;
-        if ((strcmp(J_S_MAX_FACET_RESULTS, key) == 0) && !json_is_number(value)) return -1;
-        if ((strcmp(J_S_RANK_BY, key) == 0) && !json_is_object(value)) return -1;
-        if ((strcmp(J_S_SORT_BY, key) == 0) && !json_is_object(value)) return -1;
-        if ((strcmp(J_S_FULLSCAN, key) == 0) && !json_is_boolean(value)) return -1;
-        if ((strcmp(J_S_FULLSCAN_THRES, key) == 0) && !json_is_number(value)) return -1;
+        if ((strcmp(J_S_INDEXFIELDS, key) == 0) && !is_json_string_array(value)) {
+            return "indexFields should be a string array";
+        }
+        if ((strcmp(J_S_FACETFIELDS, key) == 0) && !is_json_string_array(value)) {
+            return "facetFields should be a string array";
+        }
+        if ((strcmp(J_S_HITS_PER_PAGE, key) == 0) && !json_is_number(value)) {
+            return "hitsPerPage should be a number";
+        }
+        if ((strcmp(J_S_MAX_HITS, key) == 0) && !json_is_number(value)) {
+            return "maxHits should be a number";
+        }
+        if ((strcmp(J_S_MAX_FACET_RESULTS, key) == 0) && !json_is_number(value)) {
+            return "maxFacetResults should be a number";
+        }
+        if ((strcmp(J_S_RANK_BY, key) == 0) && !json_is_object(value)) {
+            return "rankBy should be an object";
+        }
+        if ((strcmp(J_S_SORT_BY, key) == 0) && !json_is_object(value)) {
+            return "sortBy should be an object";
+        }
+        if ((strcmp(J_S_FULLSCAN, key) == 0) && !json_is_boolean(value)) {
+            return "fullScan should be a boolean";
+        }
+        if ((strcmp(J_S_FULLSCAN_THRES, key) == 0) && !json_is_number(value)) {
+            return "fullScanThreshold should be a number";
+        }
+        // Get fields is an array of fields or null 
+        if ((strcmp(J_S_GET_FIELDS, key) == 0) && (!is_json_string_array(value) && !json_is_null(value))) {
+            return "getFields should be a string array or null";
+        }
+        if ((strcmp(J_S_HIGHLIGHT_FIELDS, key) == 0) && (!is_json_string_array(value) && !json_is_null(value))) {
+            printf("type is %d ", json_typeof(value));
+            return "highlightFields should be a string array or null";
+        }
+        if ((strcmp(J_S_HIGHLIGHT_SOURCE, key) == 0) && !json_is_boolean(value)) {
+            return "highlightFields should be a boolean";
+        }
     }
     // Now do the actual parsing of settings
     int changed = 0;
@@ -490,11 +653,12 @@ static int index_load_json_settings(struct index *in, json_t *j) {
             changed |= cfg_set_list_fields(&in->cfg.facet_fields, value);
         }
     }
+    *c = changed;
 
-    const char *parse_fail = parse_query_settings(j, in->cfg.qcfg, in->mapping);
+    const char *parse_fail = parse_query_settings(j, in->cfg.qcfg, in->mapping, true);
     if (parse_fail) {
         M_ERR("Parse error : %s", parse_fail);
-        return -1;
+        return parse_fail;
     }
  
     // We need atleast index fields to be configured, before we are in configured status
@@ -502,7 +666,30 @@ static int index_load_json_settings(struct index *in, json_t *j) {
     if (kv_size(in->cfg.index_fields)) {
         in->cfg.configured = true;
     }
-    return changed;
+    return NULL;
+}
+
+/* Fills fields in array format
+ * NOTE: path needs to be of size MAX_FIELD_NAME * 10*/
+static void fill_fields(json_t *ja, struct field *f, char *path) {
+    while (f) {
+        if (f->child) {
+            if (strlen(path) > (MAX_FIELD_NAME * 9)) return;
+            strcat(path, f->name);
+            strcat(path, ".");
+            fill_fields(ja, f, path);
+            path[strlen(path) - strlen(f->name) - 1] = '\0';
+        } else {
+            if (strlen(path)) {
+                char newpath[MAX_FIELD_NAME * 10];
+                snprintf(newpath, sizeof(newpath), "%s%s", path, f->name);
+                json_array_append_new(ja, json_string(newpath));
+            } else {
+                json_array_append_new(ja, json_string(f->name));
+            }
+        }
+        f = f->next;
+    }
 }
 
 static char *index_settings_to_json(const struct index *in) {
@@ -543,6 +730,28 @@ static char *index_settings_to_json(const struct index *in) {
         json_object_set_new(jr, qcfg->rank_by_field, json_string(qcfg->rank_asc ? ORDER_ASC : ORDER_DESC));
         json_object_set_new(jo, qcfg->rank_sort ? J_S_SORT_BY : J_S_RANK_BY, jr);
     }
+
+    if (qcfg->get_fields) {
+        json_t *jgf = json_array();
+        json_object_set_new(jo, J_S_GET_FIELDS, jgf);
+        char buf[MAX_FIELD_NAME * 10] = "";
+        fill_fields(jgf, qcfg->get_fields, buf);
+    }
+
+    if (qcfg->highlight_fields && qcfg->highlight_fields->name[0] != '\0') {
+        json_t *jhf = json_array();
+        json_object_set_new(jo, J_S_HIGHLIGHT_FIELDS, jhf);
+        char buf[MAX_FIELD_NAME * 10] = "";
+        fill_fields(jhf, qcfg->highlight_fields, buf);
+    }
+
+    if (!qcfg->highlight_fields) {
+        json_object_set_new(jo, J_S_HIGHLIGHT_FIELDS, json_null());
+    }
+
+    if (qcfg->highlight_source) {
+        json_object_set_new(jo, J_S_HIGHLIGHT_SOURCE, json_true());
+    }
  
     char *resp = json_dumps(jo, JSON_PRESERVE_ORDER|JSON_INDENT(4));
     json_decref(jo);
@@ -567,11 +776,12 @@ static void index_save_settings(struct index *in) {
 static char *index_set_settings_callback(h2o_req_t *req, void *data) {
     struct index *in = (struct index *) data;
     json_error_t error;
+    const char *errstr = NULL;
     json_t *j = json_loadb(req->entity.base, req->entity.len, 0, &error);
 
     if (j && json_is_object(j)) {
         int changed = 0;
-        if ((changed = index_load_json_settings(in, j)) < 0) {
+        if ((errstr = index_load_json_settings(in, j, &changed)) != NULL) {
             goto jerror;
         }
         index_save_settings(in);
@@ -586,12 +796,14 @@ static char *index_set_settings_callback(h2o_req_t *req, void *data) {
             update_shard_mappings(in);
         }
         return api_success(req);
+    } else {
+        M_ERR("Json error %s", error.text);
     }
 jerror:
-    M_ERR("Json error %s", error.source);
+    M_ERR("Parse error : %s", errstr);
     json_decref(j);
     req->res.status = 400;
-    req->res.reason = "Bad Request";
+    req->res.reason = errstr ? errstr : "Bad Request";
     return strdup(J_FAILURE);
 }
 
@@ -842,7 +1054,7 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
         memcpy(&q->cfg, in->cfg.qcfg, sizeof(struct query_cfg));
 
         // Parse query config overrides and other query info
-        const char *fail = parse_query_settings(jq, &q->cfg, in->mapping);
+        const char *fail = parse_query_settings(jq, &q->cfg, in->mapping, false);
         if (fail) {
             response = failure_message(fail);
             req->res.status = 400;
@@ -916,6 +1128,13 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
 
 send_response:
     if (q) {
+        // Free anything that was overridden
+        if (q->cfg.get_fields != q->in->cfg.qcfg->get_fields) {
+            fields_free(q->cfg.get_fields);
+        }
+        if (q->cfg.highlight_fields != q->in->cfg.qcfg->highlight_fields) {
+            fields_free(q->cfg.highlight_fields);
+        }
         query_free(q);
     }
     json_decref(jq);
@@ -933,7 +1152,8 @@ static void index_load_settings(struct index *in) {
     json_error_t error;
     json = json_load_file(path, 0, &error);
     if (json && json_is_object(json)) {
-        index_load_json_settings(in, json);
+        int changed = 0;
+        index_load_json_settings(in, json, &changed);
         json_decref(json);
     }
 }
@@ -1066,6 +1286,7 @@ static struct query_cfg *query_config_new(void) {
     qcfg->rank_asc  = false;    // Rank in descending order
     qcfg->num_rules = default_num_rules;
     memcpy(qcfg->rank_algo, &default_rule, sizeof(SORT_RULE) * default_num_rules);
+    qcfg->highlight_fields = calloc(1, sizeof(struct field));
     return qcfg;
 }
 
@@ -1131,6 +1352,8 @@ static void free_kvec_strings(void *kv) {
 }
 
 static void free_query_cfg(struct query_cfg *qcfg) {
+    fields_free(qcfg->get_fields);
+    fields_free(qcfg->highlight_fields);
     free(qcfg->facet_enabled);
     free(qcfg);
 }

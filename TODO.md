@@ -8,12 +8,13 @@
 - [x] Keys
 - [x] Python tests
 - [x] Partial Scanning during queries
-- [ ] Documentation
-- [ ] Website
-- [ ] Highlighting
-- [ ] Snippets
+- [x] Highlighting
+- [x] Snippets
+- [x] Restrict fields to return
 - [ ] Reindexing
 - [ ] Mapping updates on reconfiguration
+- [ ] Documentation
+- [ ] Website
 
 ### TODO 0.2
 
@@ -23,7 +24,6 @@
 - [ ] Better logging
 - [ ] Delete by query
 - [ ] Restrict facets
-- [ ] Restrict fields to return
 - [ ] Restrict fields to search
 - [ ] Get specific facets, instead of everything
 - [ ] Boolean Facets
@@ -63,11 +63,11 @@
 
 - [ ] Two terms matching same word should discard the resulting document, if no other matching word is found
      Eg., "str" : "aaaaa this is nice" with query "aaaaa baaaa" should not match
+- [ ] limit.robot getFields objects.object.inum, objects.object.iword does not return both
 
 
 ### In Progress
 
-- Highlighting
 - Documentation
 - Website
 

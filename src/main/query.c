@@ -5,6 +5,7 @@
 #include "filter.h"
 #include "debug.h"
 #include "hashtable.h"
+#include "highlight.h"
 
 #define facetgt(a, b) ((a).count > (b).count)
 KSORT_INIT(facetsort, facet_count_t, facetgt)
@@ -143,6 +144,171 @@ static json_t *get_facet_results(struct query *q, struct squery *sq) {
     return jf;
 }
 
+// Look a field in json and return a new copy if it is a valid field
+static json_t *json_lookup_field(const struct json_t* j, const char *field) {
+    json_t *jf = json_object_get(j, field);
+    if (!jf) return NULL;
+    return json_deep_copy(jf);
+}
+
+static void json_handle_limit_field(struct json_t *newj, const json_t *j, struct field *f) {
+    while (f) {
+        json_t *jo = json_lookup_field(j, f->name);
+        if (jo) {
+            // Special handling for objects and arrays, rest go as is
+            if (json_is_object(jo)) {
+                if (f->child) {
+                    json_t *jco = json_object();
+                    json_handle_limit_field(jco, jo, f->child);
+                    json_object_set_new(newj, f->name, jco);
+                    json_decref(jo);
+                } else {
+                    json_object_set_new(newj, f->name, jo);
+                }
+            } else if (json_is_array(jo)) {
+                for (int i = 0; i < json_array_size(jo); i++) {
+                    json_t *av = json_array_get(jo, i);
+                    // Handle array inner elements
+                    if (json_is_object(av) && f->child) {
+                        json_t *an = json_object();
+                        json_handle_limit_field(an, av, f->child);
+                        json_array_set_new(jo, i, an);
+                    }
+                }
+                json_object_set_new(newj, f->name, jo);
+            } else {
+                json_object_set_new(newj, f->name, jo);
+            }
+        }
+        f = f->next;
+    }
+}
+
+/* Iterates all elements / inner elements of an object and highlights all strings */
+static struct json_t *highlight_json(struct json_t *j, struct query *q) {
+    const char *key;
+    json_t *value;
+    json_object_foreach(j, key, value) {
+        if (json_is_string(value)) {
+            char *htxt = highlight(json_string_value(value), q, 0);
+            if (htxt) {
+                json_object_set_new(j, key, json_string(htxt));
+                free(htxt);
+            }
+        } else if (json_is_object(value)) {
+            highlight_json(value, q);
+        } else if (json_is_array(value)) {
+            json_t *ja = value;
+            for (int i=0; i<json_array_size(ja); i++) {
+                json_t *av = json_array_get(ja, i);
+                if (json_is_string(av)) {
+                    char *htxt = highlight(json_string_value(av), q, 0);
+                    if (htxt) {
+                        json_array_set_new(ja, i, json_string(htxt));
+                        free(htxt);
+                    }
+                } else if (json_is_object(av)) {
+                    highlight_json(av, q);
+                }
+            }
+        }
+    }
+    return j;
+}
+
+static struct json_t *highlight_all_fields(struct json_t *hit, struct query *q) {
+    if (q->cfg.highlight_source) {
+        return highlight_json(hit, q);
+    }
+    // Not highlighting source, make a copy and highlight that
+    json_t *hit_dup = json_deep_copy(hit);
+    hit_dup = highlight_json(hit_dup, q);
+    // Finally set that in source under _highlight
+    json_object_set_new(hit, J_HIGHLIGHT, hit_dup);
+    return hit;
+}
+
+static struct field * get_limited_field(struct field *f, const char *key) {
+    while (f) {
+        if (strcmp(f->name, key) == 0) return f;
+        f = f->next;
+    }
+    return NULL;
+}
+
+static struct json_t *highlight_json_limit_field(struct json_t *j, struct query *q, struct field *f) {
+    const char *key;
+    json_t *value;
+    json_object_foreach(j, key, value) {
+        struct field *lf = get_limited_field(f, key);
+        if (!lf) continue;
+
+        if (json_is_string(value)) {
+            char *htxt = highlight(json_string_value(value), q, 0);
+            if (htxt) {
+                json_object_set_new(j, key, json_string(htxt));
+                free(htxt);
+            }
+        } else if (json_is_object(value)) {
+            if (lf->child) {
+                highlight_json_limit_field(value, q, lf->child);
+            }
+        } else if (json_is_array(value)) {
+            json_t *ja = value;
+            for (int i=0; i<json_array_size(ja); i++) {
+                json_t *av = json_array_get(ja, i);
+                if (json_is_string(av)) {
+                    char *htxt = highlight(json_string_value(av), q, 0);
+                    if (htxt) {
+                        json_array_set_new(ja, i, json_string(htxt));
+                        free(htxt);
+                    }
+                } else if (json_is_object(av)) {
+                    if (lf->child) {
+                        highlight_json_limit_field(av, q, lf->child);
+                    }
+                }
+            }
+        }
+    }
+    return j;
+}
+
+static struct json_t *highlight_some_fields(struct json_t *hit, struct query *q) {
+    if (q->cfg.highlight_source) {
+        return highlight_json_limit_field(hit, q, q->cfg.highlight_fields);
+    }
+    // Not highlighting source, make a copy and highlight that
+    json_t *hit_dup = json_deep_copy(hit);
+    hit_dup = highlight_json_limit_field(hit_dup, q, q->cfg.highlight_fields);
+    // Finally set that in source under _highlight
+    json_object_set_new(hit, J_HIGHLIGHT, hit_dup);
+    return hit;
+}
+
+/* Takes a hit and applies query processing like getFields or highlightFields */
+static struct json_t *hit_query_processing(struct json_t *hit, struct query *q) {
+    if (!q->cfg.get_fields && !q->cfg.highlight_fields) {
+        return hit;
+    }
+    struct json_t *new_hit = hit;
+    if (q->cfg.get_fields) {
+        new_hit = json_object();
+        json_handle_limit_field(new_hit, hit, q->cfg.get_fields);
+        json_decref(hit);
+    }
+
+    if (q->cfg.highlight_fields) {
+        // We highlight all fields, this is '*' / default setting
+        if (q->cfg.highlight_fields->name[0] == '\0') {
+            new_hit = highlight_all_fields(new_hit, q);
+        } else {
+            new_hit = highlight_some_fields(new_hit, q);
+        }
+    }
+    return new_hit;
+}
+
 static json_t *form_result(struct query *q, struct squery *sq) {
     json_t *j = json_object();
     // Process response within shardquery
@@ -212,6 +378,8 @@ static json_t *form_result(struct query *q, struct squery *sq) {
         if (o) {
             json_error_t error;
             json_t *hit = json_loads(o, 0, &error);
+            // process hit to highlight and or filter fields
+            hit = hit_query_processing(hit, q);
             if (hit) {
                 if (q->explain) {
                     explain_rank(q, hit, &ranks[i]);
