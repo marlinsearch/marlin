@@ -166,11 +166,16 @@ static void json_handle_limit_field(struct json_t *newj, const json_t *j, struct
                     json_object_set_new(newj, f->name, jo);
                 }
             } else if (json_is_array(jo)) {
-                // TODO: Handle array inner elements
-                if (f->child) {
-                } else {
-                    json_object_set_new(newj, f->name, jo);
+                for (int i = 0; i < json_array_size(jo); i++) {
+                    json_t *av = json_array_get(jo, i);
+                    // Handle array inner elements
+                    if (json_is_object(av) && f->child) {
+                        json_t *an = json_object();
+                        json_handle_limit_field(an, av, f->child);
+                        json_array_set_new(jo, i, an);
+                    }
                 }
+                json_object_set_new(newj, f->name, jo);
             } else {
                 json_object_set_new(newj, f->name, jo);
             }
@@ -260,7 +265,7 @@ static struct json_t *highlight_json_limit_field(struct json_t *j, struct query 
                     }
                 } else if (json_is_object(av)) {
                     if (lf->child) {
-                        highlight_json_limit_field(av, q, lf);
+                        highlight_json_limit_field(av, q, lf->child);
                     }
                 }
             }

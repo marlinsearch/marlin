@@ -1,0 +1,4 @@
+{
+"indexedFields": ["word", "sentence", "number", "boolean", "words", "numbers", "object.word", "object.number", "object.boolean", "object.iobject.iword", "object.iobject.inum", "objects.word", "objects.object.iword", "bigobject.levelone.leveltwo.levelthree.word"],
+"facetFields": ["word", "words", "bigobject.levelone.leveltwo.levelthree.word"]
+}

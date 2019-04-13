@@ -63,6 +63,7 @@
 
 - [ ] Two terms matching same word should discard the resulting document, if no other matching word is found
      Eg., "str" : "aaaaa this is nice" with query "aaaaa baaaa" should not match
+- [ ] limit.robot getFields objects.object.inum, objects.object.iword does not return both
 
 
 ### In Progress

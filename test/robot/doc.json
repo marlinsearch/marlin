@@ -1,0 +1,11 @@
+{
+    "word": "this",
+    "sentence": "this is a word",
+    "number": 22,
+    "boolean": true,
+    "words": ["this", "is", "a", "word"],
+    "numbers": [1, 2, 3, 4],
+    "object": {"word": "this", "number": 33, "boolean": false, "iobject": {"iword": "this", "inum": 44}},
+    "objects": [ {"word": "this", "number": 55, "boolean": false, "object": {"iword": "this", "inum": 66}}, {"word": "this", "number": 77, "boolean": false, "object": {"iword": "this", "inum": 88}}],
+    "bigobject": {"levelone": {"leveltwo": {"levelthree": {"word": "this", "number": 4}}}}
+}

@@ -93,6 +93,8 @@
 #define J_S_FULLSCAN        "fullScan"
 #define J_S_FULLSCAN_THRES  "fullScanThreshold"
 #define J_S_GET_FIELDS      "getFields"
+#define J_S_HIGHLIGHT_FIELDS    "highlightFields"
+#define J_S_HIGHLIGHT_SOURCE    "highlightSource"
 
 
 // config / settings field names
