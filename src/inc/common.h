@@ -10,7 +10,7 @@
 
 #define VALGRIND_TEST 1
 
-#ifdef VALGRIND_TEST
+#if VALGRIND_TEST
 #define MDB_ENV_SIZE        655360000
 #define MAPSIZE             655360000
 #else
@@ -96,7 +96,6 @@
 #define J_S_HIGHLIGHT_FIELDS    "highlightFields"
 #define J_S_HIGHLIGHT_SOURCE    "highlightSource"
 
-
 // config / settings field names
 #define J_FULL_SCHEMA   "fullSchema"
 #define J_INDEX_SCHEMA  "indexSchema"
@@ -112,6 +111,7 @@
 // Query attributes
 #define J_QUERY         "q"
 #define J_FILTER        "filter"
+#define J_AGGS          "aggs"
 #define J_PAGE          "page"
 #define J_EXPLAIN       "explain"
 

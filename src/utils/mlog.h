@@ -26,15 +26,17 @@ extern int global_log_level;
 #define M_INFO(fmt, arg...) do { if (global_log_level < 2) {\
     char buff[20]; \
     time_t now = time(NULL); \
-    strftime(buff, 20, "%m-%d-%Y %H:%M:%S", localtime(&now)); \
+    struct tm result; \
+    strftime(buff, 20, "%m-%d-%Y %H:%M:%S", localtime_r(&now, &result)); \
     mlog_func("[%s] "fmt"\n", buff, ##arg);} \
 } while(0)
 
 #define M_ERR(fmt, arg...)  do { if (global_log_level < 3) {\
     char buff[20]; \
     time_t now = time(NULL); \
-    strftime(buff, 20, "%m-%d-%Y %H:%M:%S", localtime(&now)); \
-    mlog_func("[%s] *NOTE:* "fmt" @%s():%d\n", buff, ##arg, __FUNCTION__, __LINE__);} \
+    struct tm result; \
+    strftime(buff, 20, "%m-%d-%Y %H:%M:%S", localtime_r(&now, &result)); \
+    mlog_func("[%s] *ERROR:* "fmt" @%s():%d\n", buff, ##arg, __FUNCTION__, __LINE__);} \
 } while(0)
 #endif
 
