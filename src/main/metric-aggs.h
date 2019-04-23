@@ -13,6 +13,13 @@ struct agg_max {
     double value;
 };
 
+struct agg_min{
+    struct agg a;
+    int min_field;
+    double value;
+};
+
 struct agg *parse_max_agg(const char *name, json_t *j, struct index *in);
+struct agg *parse_min_agg(const char *name, json_t *j, struct index *in);
 
 #endif

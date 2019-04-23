@@ -74,7 +74,7 @@ struct query {
     int num_words;
     kvec_t(term_t *) terms;
     struct filter *filter; // The filters for this query
-    struct aggs *agg;      // The aggregations for this query
+    struct agg *agg;      // The aggregations for this query
 
     // Query config
     struct query_cfg cfg;

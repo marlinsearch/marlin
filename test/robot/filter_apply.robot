@@ -3,7 +3,7 @@ Resource  common.robot
 
 *** Variables ***
 ${settings}     {"indexedFields": ["str", "n", "nl", "b"], "facetFields": ["f", "fl"]}
-${index}  {"name" : "testindex", "nShards": 5}
+${index}  {"name" : "testindex", "numShards": 5}
 
 
 *** Test Cases ***

@@ -3,7 +3,7 @@ Resource  common.robot
 
 *** Variables ***
 ${settings}     {"indexedFields": ["str"] }
-${index}  {"name" : "testindex", "nShards": 1}
+${index}  {"name" : "testindex", "numShards": 1}
 
 *** Test Cases ***
 Create a new application

@@ -25,9 +25,9 @@ Configure the index
 Load some data
     @{json_data}  Set Variable   
        ...  [
-       ...   {"str": "a", "n": 1, "nl": [1,2,3], "f": "aaa", "fl": ["zzz", "yyy"], "b": true},
+       ...   {"str": "a", "n": 1, "nl": [8,2,3], "f": "aaa", "fl": ["zzz", "yyy"], "b": true},
        ...   {"str": "a", "n": 2, "nl": [2,3,4], "f": "bbb", "fl": ["yyy", "xxx"], "b": false},
-       ...   {"str": "a", "n": 3, "nl": [3,4,5], "f": "ccc", "fl": ["xxx", "www"], "b": true},
+       ...   {"str": "a", "n": 11, "nl": [3,4,5], "f": "ccc", "fl": ["xxx", "www"], "b": true},
        ...   {"str": "a", "n": 4, "nl": [4,5,6], "f": "ccc", "fl": ["www", "vvv", "xxx"], "b": false},
        ...   {"str": "a", "n": 5, "nl": [5,6,7], "f": "eee", "fl": ["vvv", "uuu"], "b": true}
        ...  ]
@@ -41,23 +41,16 @@ Load some data
 Test a empty query
     Set Headers  ${appheader}
     POST         /1/indexes/testindex/query  {"q": ""}
-    Output
     Integer     response status     200
     Integer     $.totalHits         5
 
-Test maxFacetResults
-    Set Headers  ${appheader}
-    POST         /1/indexes/testindex/query  {"maxFacetResults": 2}
-    Output
-    Integer     response status     200
-    Integer     $.totalHits         5
-    Set Headers  ${appheader}
-    POST         /1/indexes/testindex/query  {"maxFacetResults": 1000}
-    Output
-    Integer     response status     200
-    Integer     $.totalHits         5
+Test max aggr
+    POST         /1/indexes/testindex/query  {"aggs": {"max_n": {"max": {"field": "n"}}, "max_nl": {"max": {"field": "nl"}}}}
+    Integer     $.aggs.max_n.value  11
 
-
+Test min aggr
+    POST         /1/indexes/testindex/query  {"aggs": {"min_n": {"min": {"field": "n"}}, "min_nl": {"min": {"field": "nl"}}}}
+    Integer     $.aggs.min_n.value  1
 
 Delete the index
     Set Headers  ${appheader}

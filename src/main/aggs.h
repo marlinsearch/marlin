@@ -24,6 +24,9 @@ struct agg;
 typedef void (*parse_agg_f) (json_t *j);
 typedef void (*consume_f) (struct agg *a, struct index *in, uint32_t docid, void *data);
 typedef json_t *(*as_json_f) (struct agg *a);
+typedef struct agg *(*agg_dup_f) (const struct agg *a);
+typedef void (*merge_agg_f) (struct agg *info, const struct agg *from);
+typedef void (*agg_free_f) (struct agg *a);
 
 /* Holds an aggregation and its nested aggregations */
 typedef struct agg {
@@ -34,9 +37,13 @@ typedef struct agg {
     struct agg *naggs; // Nested aggregations for bucket aggregations
     consume_f consume;
     as_json_f as_json;
+    agg_dup_f dup;
+    merge_agg_f merge;
+    agg_free_f free;
 } agg_t;
 
-struct agg *parse_aggs(const char *agg_key, const char *name, json_t *j, struct index *in);
+struct agg *parse_aggs(json_t *j, struct index *in);
 struct agg *detect_and_parse(const char *key, json_t *j, struct index *in);
+struct agg *aggs_dup(const struct agg *a);
 
 #endif

@@ -762,6 +762,7 @@ static void parse_index_document(struct sindex *si, struct schema *s, json_t *j)
                     double d = json_number_value(jn);
                     // TODO: Decide on how to store arrays in docdata and index
                     // Probably the same way we handle facets?
+                    od->num_data[s->i_priority] = d;
                     if (s->is_indexed) {
                         index_number(si, s->i_priority, d);
                     }
