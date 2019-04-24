@@ -9,6 +9,7 @@ typedef enum agg_type {
     AGG_MIN,
     AGG_AVG,
     AGG_STATS,
+    AGG_CARDINALITY,
     AGG_ERROR
 } AGG_TYPE;
 

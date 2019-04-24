@@ -1079,9 +1079,14 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
             }
         }
         json_t *ja = json_object_get(jq, J_AGGS);
-        // We have a filter, let us parse it
+        // We have an aggregation, let us parse it
         if (ja && !json_is_null(ja) && json_object_size(ja)) {
             q->agg = parse_aggs(ja, in);
+            if (q->agg && q->agg->type == AGG_ERROR) {
+                req->res.status = 400;
+                response = failure_message(q->agg->name);
+                goto send_response;
+            }
         }
 
         json_t *jp = json_object_get(jq, J_PAGE);

@@ -626,6 +626,7 @@ void query_free(struct query *q) {
     if (q->filter) {
         filter_free(q->filter);
     }
+
     if (q->agg) {
         q->agg->free(q->agg);
     }

@@ -40,10 +40,18 @@ struct agg_stats {
     int count;
 };
 
+struct agg_card {
+    struct agg a;
+    int field;
+    struct bmap *bmap;
+    struct oper *oper;
+    uint32_t count;
+};
 
 struct agg *parse_max_agg(const char *name, json_t *j, struct index *in);
 struct agg *parse_min_agg(const char *name, json_t *j, struct index *in);
 struct agg *parse_avg_agg(const char *name, json_t *j, struct index *in);
 struct agg *parse_stats_agg(const char *name, json_t *j, struct index *in);
+struct agg *parse_card_agg(const char *name, json_t *j, struct index *in);
 
 #endif

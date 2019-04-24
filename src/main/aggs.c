@@ -78,6 +78,7 @@ static struct agg *parse_root_agg(const char *name, json_t *j, struct index *in)
             // aggregation, copy over the error
             root->type = AGG_ERROR;
             snprintf(root->name, sizeof(root->name), "%s", c->name);
+            c->free(c);
             break;
         } else {
             // We have a properly parsed aggregation, add it as a child
@@ -101,6 +102,8 @@ const struct agg_info aggs[] = {
     {"avg", parse_avg_agg},
     // Stags - metric aggregation
     {"stats", parse_stats_agg},
+    // Cardinality - metric aggregation
+    {"cardinality", parse_card_agg},
     {NULL, NULL}
 };
 

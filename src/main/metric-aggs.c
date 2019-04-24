@@ -7,6 +7,101 @@ static void metric_agg_free(struct agg *f) {
     free(f);
 }
 
+/************ CARDINALITY METRICS AGGREGATION ************/
+/* TODO: Currently uses a bitmap, Use hyperlog++ after tracking memory usage if required */
+static void card_agg_free(struct agg *a) {
+    struct agg_card *ac = (struct agg_card *)a;
+    if (ac->bmap) {
+        bmap_free(ac->bmap);
+    }
+    if (ac->oper) {
+        oper_free(ac->oper);
+    }
+    free(ac);
+}
+
+static void consume_card_agg(struct agg *a, struct index *in, uint32_t docid, void *data) {
+    struct agg_card *ac = (struct agg_card *)a;
+    uint8_t *pos = data;
+    pos = pos + sizeof(uint32_t); // Skip offset
+    struct mapping *m = in->mapping;
+    // calculate facet offset
+    size_t fo = m->num_numbers * sizeof(double);
+    // Get the facet position
+    uint8_t *fpos = pos + fo;
+    for (int i = 0; i < m->num_facets; i++) {
+        facets_t *f = (facets_t *)fpos;
+        // If facet is enabled, count it
+        if (i == ac->field) {
+            for (int j = 0; j < f->count; j++) {
+                bmap_add(ac->bmap, f->data[j]);
+            }
+            return;
+        }
+        // Move to next facet
+        fpos += ((f->count * sizeof(uint32_t)) + sizeof(uint32_t));
+    }
+
+}
+
+static json_t *card_agg_as_json(struct agg *a) {
+    struct agg_card *ac = (struct agg_card *)a;
+    json_t *j = json_object();
+    if (ac->oper) {
+        bmap_free(ac->bmap);
+        ac->bmap = oper_or(ac->oper);
+    }
+    json_object_set_new(j, JA_VALUE, json_integer(bmap_cardinality(ac->bmap)));
+    return j;
+}
+
+static struct agg *card_agg_dup(const struct agg *a) {
+    struct agg_card *card = malloc(sizeof(struct agg_card));
+    memcpy(card, a, sizeof(struct agg_card));
+    // NOTE: Do not copy bmap, just create a new bitmap.
+    card->bmap = bmap_new();
+    return (struct agg *)card;
+}
+
+static void card_agg_merge(struct agg *into, const struct agg *from) {
+    struct agg_card *f = (struct agg_card *)from;
+    struct agg_card *i = (struct agg_card *)into;
+    if (!i->oper) {
+        i->oper = oper_new();
+    }
+    oper_add(i->oper, f->bmap);
+}
+
+struct agg *parse_card_agg(const char *name, json_t *j, struct index *in) {
+    struct agg_card *card = calloc(1, sizeof(struct agg_card));
+    struct agg *a = (struct agg *)card;
+    a->kind = AGGK_METRIC;
+    a->type = AGG_CARDINALITY;
+    a->free = card_agg_free;
+
+    snprintf(a->name, sizeof(a->name), "%s", name);
+    json_t *f = json_object_get(j, JA_FIELD);
+    if (f) {
+        const char *field = json_string_value(f);
+        if (field) {
+            struct schema *s = get_field_schema(in, field);
+            if (s && s->is_facet) {
+                card->field = s->f_priority;
+                a->consume = consume_card_agg;
+                a->as_json = card_agg_as_json;
+                a->dup = card_agg_dup;
+                a->merge = card_agg_merge;
+                card->bmap = bmap_new();
+                return a;
+            }
+        }
+    }
+
+    a->type = AGG_ERROR;
+    snprintf(a->name, sizeof(a->name), "Failed to parse card aggr %s, requires a facet value.", name);
+    return a;
+}
+
 
 /************ STATS METRICS AGGREGATION ************/
 static void consume_stats_agg(struct agg *a, struct index *in, uint32_t docid, void *data) {
@@ -60,6 +155,7 @@ struct agg *parse_stats_agg(const char *name, json_t *j, struct index *in) {
     struct agg *a = (struct agg *)stats;
     a->kind = AGGK_METRIC;
     a->type = AGG_STATS;
+    a->free = metric_agg_free;
     snprintf(a->name, sizeof(a->name), "%s", name);
     json_t *f = json_object_get(j, JA_FIELD);
     if (f) {
@@ -74,7 +170,6 @@ struct agg *parse_stats_agg(const char *name, json_t *j, struct index *in) {
                 a->as_json = stats_agg_as_json;
                 a->dup = stats_agg_dup;
                 a->merge = stats_agg_merge;
-                a->free = metric_agg_free;
                 return a;
             }
         }
@@ -121,6 +216,7 @@ struct agg *parse_avg_agg(const char *name, json_t *j, struct index *in) {
     struct agg *a = (struct agg *)avg;
     a->kind = AGGK_METRIC;
     a->type = AGG_AVG;
+    a->free = metric_agg_free;
     snprintf(a->name, sizeof(a->name), "%s", name);
     json_t *f = json_object_get(j, JA_FIELD);
     if (f) {
@@ -133,7 +229,6 @@ struct agg *parse_avg_agg(const char *name, json_t *j, struct index *in) {
                 a->as_json = avg_agg_as_json;
                 a->dup = avg_agg_dup;
                 a->merge = avg_agg_merge;
-                a->free = metric_agg_free;
                 return a;
             }
         }
@@ -180,6 +275,7 @@ struct agg *parse_max_agg(const char *name, json_t *j, struct index *in) {
     struct agg *a = (struct agg *)max;
     a->kind = AGGK_METRIC;
     a->type = AGG_MAX;
+    a->free = metric_agg_free;
     snprintf(a->name, sizeof(a->name), "%s", name);
     json_t *f = json_object_get(j, JA_FIELD);
     if (f) {
@@ -193,7 +289,6 @@ struct agg *parse_max_agg(const char *name, json_t *j, struct index *in) {
                 a->as_json = max_agg_as_json;
                 a->dup = max_agg_dup;
                 a->merge = max_agg_merge;
-                a->free = metric_agg_free;
                 return a;
             }
         }
@@ -240,6 +335,7 @@ struct agg *parse_min_agg(const char *name, json_t *j, struct index *in) {
     struct agg *a = (struct agg *)min;
     a->kind = AGGK_METRIC;
     a->type = AGG_MIN;
+    a->free = metric_agg_free;
     snprintf(a->name, sizeof(a->name), "%s", name);
     json_t *f = json_object_get(j, JA_FIELD);
     if (f) {
@@ -253,7 +349,6 @@ struct agg *parse_min_agg(const char *name, json_t *j, struct index *in) {
                 a->as_json = min_agg_as_json;
                 a->dup = min_agg_dup;
                 a->merge = min_agg_merge;
-                a->free = metric_agg_free;
                 return a;
             }
         }
