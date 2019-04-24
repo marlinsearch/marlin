@@ -352,6 +352,9 @@ static json_t *form_result(struct query *q, struct squery *sq) {
         if (sq[0].fast_rank) {
             fullScan = false;
         }
+        if (sq[0].sqres->agg) {
+            json_object_set_new(j, J_AGGS, sq[0].sqres->agg->as_json(sq[0].sqres->agg));
+        }
     } else {
         // If we have more than one shard, allocate data to combine all shard results
         ranks = malloc(sizeof(struct docrank) * total_ranks);
@@ -367,9 +370,16 @@ static json_t *form_result(struct query *q, struct squery *sq) {
             if (sq[i].fast_rank) {
                 fullScan = false;
             }
+            if (q->agg) {
+                q->agg->merge(q->agg, sq[i].sqres->agg);
+            }
         }
         M_DBG("Sorting %d hits\n", total_ranks);
         rank_sort(total_ranks, ranks, q->rank_rule);
+
+        if (q->agg) {
+            json_object_set_new(j, J_AGGS, q->agg->as_json(q->agg));
+        }
     }
 
     for (int i=page_s; i<page_e; i++) {
@@ -416,7 +426,7 @@ char *execute_query(struct query *q) {
 
     struct timeval start, stop;
     struct index *in = q->in;
-    struct squery *sq = malloc(sizeof(struct squery) * in->num_shards);
+    struct squery *sq = calloc(in->num_shards, sizeof(struct squery));
 
     // Start time
     gettimeofday(&start, NULL);
@@ -615,6 +625,9 @@ void query_free(struct query *q) {
 
     if (q->filter) {
         filter_free(q->filter);
+    }
+    if (q->agg) {
+        q->agg->free(q->agg);
     }
 
     free(q);

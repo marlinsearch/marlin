@@ -398,11 +398,17 @@ static inline void perform_doc_processing(struct squery *sq, struct docrank *ran
         process_facet_result(sq, pos + sizeof(uint32_t));
     }
 
+    // Handle sort / rankby field
     if (LIKELY(sq->q->cfg.rank_by >= 0)) {
         rank->compare = setup_rank_compare(sq->q->cfg.rank_by, pos + sizeof(uint32_t));
     }
-}
 
+    // Handle aggregations
+    // TODO: how do we handle partial scan ?? Force full scan if we have an agg?
+    if (sq->sqres->agg) {
+        sq->sqres->agg->consume(sq->sqres->agg, sq->q->in, rank->docid, pos);
+    }
+}
 
 static inline void perform_doc_rank(struct squery *sq, struct docrank *rank) {
     MDB_val key, mdata;

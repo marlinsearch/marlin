@@ -343,6 +343,10 @@ void sqresult_free(struct query *q, struct squery_result *sqres) {
         hashtable_free(sqres->fh[i].h);
         free(sqres->fc[i]);
     }
+    // Free aggregations
+    if (sqres->agg) {
+        sqres->agg->free(sqres->agg);
+    }
     free(sqres->fc);
     free(sqres->fh);
     free(sqres);
@@ -482,7 +486,12 @@ void execute_squery(void *w) {
     if (sq->q->filter) {
         squery_apply_filters(sq);
     }
+
     trace_query("Applied filters in", &start);
+    // Copy aggs if required
+    if (sq->q->agg) {
+        sq->sqres->agg = aggs_dup(sq->q->agg);
+    }
 
     uint32_t resultcount = 0;
     sq->sqres->num_hits = bmap_cardinality(sq->sqres->docid_map);

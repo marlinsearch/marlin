@@ -140,6 +140,47 @@ static inline int bitset_bitset_and_cardinality(const struct cont *a, const stru
     return card;
 }
 
+void bitset_cont_to_array(struct cont *c) {
+    uint16_t *nb = malloc((2 + cont_cardinality(c)) * sizeof(uint16_t));
+    int p = 2;
+    uint32_t base = c->buffer[ID] << 16;
+    const uint64_t *buffer = (const uint64_t *)&c->buffer[2];
+    for (int i=0; i<BCUTOFF; i++) {
+        uint64_t w = buffer[i];
+        while (w != 0) {
+            uint64_t t = w & (~w + 1);
+            int r = __builtin_ctzll(w);
+            nb[p++] = r+base;
+            w ^= t;
+        }
+        base += 64;
+    }
+    nb[ID] = c->buffer[ID];
+    nb[CARDINALITY] = c->buffer[CARDINALITY];
+    free(c->buffer);
+    c->buffer = nb;
+}
+
+static struct cont *bitset_bitset_andnot(const struct cont *a, const struct cont *b) {
+    struct cont *c = malloc(sizeof(struct cont));
+    c->buffer = calloc((CUTOFF+2), sizeof(uint16_t));
+    const uint64_t *al = (const uint64_t *)&a->buffer[2];
+    const uint64_t *bl = (const uint64_t *)&b->buffer[2];
+    uint64_t *cl = (uint64_t *)&c->buffer[2];
+    for (int i = 0; i < 1024; i+=2) {
+        cl[i] = (al[i] & ~bl[i]);
+        cl[i+1] = (al[i+1] & ~bl[i+1]);
+    }
+    c->buffer[ID] = a->buffer[ID];
+    bitset_cont_cardinality(c);
+    // convert bitset container to proper containers
+    if (cont_cardinality(c) <= CUTOFF) {
+        bitset_cont_to_array(c);
+    }
+    return c;
+}
+
+
 static struct cont *bitset_bitset_and(const struct cont *a, const struct cont *b) {
     struct cont *c = malloc(sizeof(struct cont));
     int cardinality = bitset_bitset_and_cardinality(a, b);
@@ -172,23 +213,72 @@ static struct cont *bitset_bitset_and(const struct cont *a, const struct cont *b
 
     c->buffer[ID] = a->buffer[ID];
     c->buffer[CARDINALITY] = cardinality;
-    /*
-    if (cont_and_cardinality(a, b) != c->buffer[CARDINALITY]) {
-        printf("card check failed here 3\n");
-        exit(1);
-    }
-    if (a->buffer[ID] != c->buffer[ID]) {
-        printf("Failed id here 1");
-        exit(1);
-    }*/
     return c;
 }
+
+static int difference_uint16(const uint16_t *a1, int length1, const uint16_t *a2,
+                      int length2, uint16_t *a_out) {
+    int out_card = 0;
+    int k1 = 0, k2 = 0;
+    if (length1 == 0) {
+        return 0;
+    }
+    if (length2 == 0) {
+        if (a1 != a_out) memcpy(a_out, a1, sizeof(uint16_t) * length1);
+        return length1;
+    }
+    uint16_t s1 = a1[k1];
+    uint16_t s2 = a2[k2];
+    while (true) {
+        if (s1 < s2) {
+            a_out[out_card++] = s1;
+            ++k1;
+            if (k1 >= length1) {
+                break;
+            }
+            s1 = a1[k1];
+        } else if (s1 == s2) {
+            ++k1;
+            ++k2;
+            if (k1 >= length1) {
+                break;
+            }
+            if (k2 >= length2) {
+                memmove(a_out + out_card, a1 + k1,
+                        sizeof(uint16_t) * (length1 - k1));
+                return out_card + length1 - k1;
+            }
+            s1 = a1[k1];
+            s2 = a2[k2];
+        } else {  // if (val1>val2)
+            ++k2;
+            if (k2 >= length2) {
+                memmove(a_out + out_card, a1 + k1,
+                        sizeof(uint16_t) * (length1 - k1));
+                return out_card + length1 - k1;
+            }
+            s2 = a2[k2];
+        }
+    }
+    return out_card;
+}
+
 
 static inline int array_advance(const struct cont *b, int len, uint16_t val, int pos) {
     while(++pos < len) {
         if (b->buffer[pos] >= val) return pos;
     }
     return pos;
+}
+
+static struct cont *array_array_andnot(const struct cont *a, const struct cont *b) {
+    struct cont *c = malloc(sizeof(struct cont));
+    c->buffer = calloc(cont_cardinality(a) + 2, sizeof(uint16_t));
+    c->buffer[ID] = a->buffer[ID];
+    c->buffer[CARDINALITY] = difference_uint16(&a->buffer[2], 
+                               cont_cardinality(a), &b->buffer[2], 
+                               cont_cardinality(b), &c->buffer[2]);
+    return c;
 }
 
 static struct cont *array_array_and(const struct cont *a, const struct cont *b) {
@@ -217,16 +307,35 @@ static struct cont *array_array_and(const struct cont *a, const struct cont *b) 
             pos2 = array_advance(b, l2, v1, pos2);
         }
     }
-    /*
-    if (cont_and_cardinality(a, b) != c->buffer[CARDINALITY]) {
-        printf("card check failed here 2\n");
-        exit(1);
+    return c;
+}
+
+
+static struct cont *bitset_array_andnot(const struct cont *a, const struct cont *b) {
+    struct cont *c = malloc(sizeof(struct cont));
+    c->buffer = cont_duplicate(a);
+    int count = cont_cardinality(b);
+    for (int i = 2; i < count+2; i++) {
+        cont_remove(c, b->buffer[i]);
     }
-    if (a->buffer[ID] != c->buffer[ID]) {
-        printf("Failed id here 2");
-        exit(1);
+    return c;
+}
+
+static struct cont *array_bitset_andnot(const struct cont *a, const struct cont *b) {
+    struct cont *c = malloc(sizeof(struct cont));
+    c->buffer = malloc(sizeof(uint16_t) * (2 + (cont_cardinality(a) ? cont_cardinality(a) : 1)));
+    c->buffer[ID] = a->buffer[ID];
+    c->buffer[CARDINALITY + 1] = 0;
+
+    int count = cont_cardinality(a);
+    int newcard = 0;
+    for (int i = 2; i < count+2; i++) {
+        if (!exists_bitset(b, a->buffer[i])) {
+            c->buffer[2 + newcard] = a->buffer[i];
+            newcard++;
+        }
     }
-    */
+    c->buffer[CARDINALITY] = newcard;
     return c;
 }
 
@@ -235,7 +344,7 @@ static struct cont *bitset_array_and(const struct cont *a, const struct cont *b)
     if (!c) {
         return NULL;
     }
-    c->buffer = malloc(sizeof(uint16_t) * (2 + a->buffer[CARDINALITY]));
+    c->buffer = malloc(sizeof(uint16_t) * (2 + (a->buffer[CARDINALITY] ? a->buffer[CARDINALITY]: 1)));
     if (!c->buffer) {
         free(c);
         return NULL;
@@ -279,6 +388,24 @@ struct cont *cont_and(const struct cont *a, const struct cont *b) {
             break;
         case CONT_PAIR(ARRAY_CONT_TYPE, BITSET_CONT_TYPE):
             return bitset_array_and(a, b);
+            break;
+    }
+    return NULL;
+}
+
+struct cont *cont_andnot(const struct cont *a, const struct cont *b) {
+    switch(CONT_PAIR(cont_type(a), cont_type(b))) {
+        case CONT_PAIR(BITSET_CONT_TYPE, BITSET_CONT_TYPE):
+            return bitset_bitset_andnot(a, b);
+            break;
+        case CONT_PAIR(ARRAY_CONT_TYPE, ARRAY_CONT_TYPE):
+            return array_array_andnot(a, b);
+            break;
+        case CONT_PAIR(BITSET_CONT_TYPE, ARRAY_CONT_TYPE):
+            return bitset_array_andnot(a, b);
+            break;
+        case CONT_PAIR(ARRAY_CONT_TYPE, BITSET_CONT_TYPE):
+            return array_bitset_andnot(a, b);
             break;
     }
     return NULL;

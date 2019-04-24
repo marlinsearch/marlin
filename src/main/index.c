@@ -11,6 +11,7 @@
 #include "query.h"
 #include "debug.h"
 #include "filter.h"
+#include "aggs.h"
 
 #pragma GCC diagnostic ignored "-Wformat-truncation="
 #define USE_INDEX_THREAD_POOL 1
@@ -1076,6 +1077,11 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
                 response = failure_message(q->filter->error);
                 goto send_response;
             }
+        }
+        json_t *ja = json_object_get(jq, J_AGGS);
+        // We have a filter, let us parse it
+        if (ja && !json_is_null(ja) && json_object_size(ja)) {
+            q->agg = parse_aggs(ja, in);
         }
 
         json_t *jp = json_object_get(jq, J_PAGE);

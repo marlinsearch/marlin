@@ -18,6 +18,7 @@ void bmap_free(struct bmap *b);
 void bmap_free_containers(struct bmap *b);
 uint32_t bmap_cardinality(const struct bmap *b);
 struct bmap *bmap_and(const struct bmap *a, const struct bmap *b);
+struct bmap *bmap_andnot(const struct bmap *a, const struct bmap *b);
 uint32_t bmap_and_cardinality(const struct bmap *a, const struct bmap *b);
 struct bmap *convert_to_bitset_bmap(const struct bmap *f);
 struct bmap *bmap_duplicate(const struct bmap *b);
@@ -26,7 +27,6 @@ uint32_t bmap_get_dumplen(const struct bmap *b);
 void bmap_dump(const struct bmap *b, uint16_t *buf); // Dump to buf
 void bmap_load(struct bmap *b, const uint16_t *buf); // Load from buf
 bool bmap_exists(const struct bmap *b, uint32_t item);
-struct bmap *bmap_invert(const struct bmap *b, const struct bmap *input);
 
 struct oper {
     int count;

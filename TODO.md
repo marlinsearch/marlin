@@ -77,3 +77,4 @@
 - [ ] facet.robot
 - [ ] sort.robot
 - [ ] rank_terms.robot
+- [ ] aggs.robot

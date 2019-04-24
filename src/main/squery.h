@@ -6,6 +6,7 @@
 #include "workers.h"
 #include "mbmap.h"
 #include "hashtable.h"
+#include "aggs.h"
 
 typedef struct termdata {
     termresult_t *tresult;
@@ -39,6 +40,7 @@ struct squery_result {
     struct facet_hash *fh;              // Facet hashtables for enabled facets
     struct facet_count **fc;            // Facet count result
     khash_t(WID2TYPOS) *all_wordids;    // All matching word ids to typos for all terms
+    struct agg *agg;
     int rank_count;
     int num_hits;
 };
