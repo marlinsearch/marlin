@@ -32,6 +32,7 @@ bool cont_remove(struct cont *c, const uint16_t item);
 void cont_iterate(const struct cont *c, bmap_iterator iter, void *param);
 void cont_free(struct cont *);
 struct cont *cont_and(const struct cont *a, const struct cont *b);
+struct cont *cont_andnot(const struct cont *a, const struct cont *b);
 void cont_inplace_and(struct cont *a, const struct cont *b);
 void cont_inplace_union(struct cont *a, const struct cont *b);
 void bitset_cont_inplace_union(struct cont *a, const struct cont *b);
@@ -39,6 +40,7 @@ uint32_t cont_and_cardinality(const struct cont *a, const struct cont *b);
 uint16_t *cont_duplicate(const struct cont *c);
 bool cont_exists(const struct cont *c, uint16_t item);
 void cont_invert(struct cont *c, const struct cont *input);
+void bitset_cont_to_array(struct cont *c);
 
 void bitset_cont_cardinality(struct cont *c);
 uint16_t cont_get_first(const struct cont *c);

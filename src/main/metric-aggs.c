@@ -1,6 +1,67 @@
 #include "metric-aggs.h"
 #include "float.h"
 
+/************ AVG METRICS AGGREGATION ************/
+static void consume_avg_agg(struct agg *a, struct index *in, uint32_t docid, void *data) {
+    struct agg_avg *am = (struct agg_avg *)a;
+    uint8_t *pos = data;
+    double *dpos = (double *)(pos + sizeof(uint32_t));
+    // TODO: Handle NULL values
+    am->value += (dpos[am->field]);
+    am->count++;
+}
+
+static json_t *avg_agg_as_json(struct agg *a) {
+    struct agg_avg *am = (struct agg_avg *)a;
+    json_t *j = json_object();
+    json_object_set_new(j, JA_VALUE, json_real((am->value / am->count)));
+    return j;
+}
+
+static struct agg *avg_agg_dup(const struct agg *a) {
+    struct agg_avg *avg = malloc(sizeof(struct agg_avg));
+    memcpy(avg, a, sizeof(struct agg_avg));
+    return (struct agg *)avg;
+}
+
+static void avg_agg_merge(struct agg *into, const struct agg *from) {
+    struct agg_avg *f = (struct agg_avg *)from;
+    struct agg_avg *i = (struct agg_avg *)into;
+    i->value += f->value;
+    i->count += f->count;
+}
+
+static void avg_agg_free(struct agg *f) {
+    free(f);
+}
+
+struct agg *parse_avg_agg(const char *name, json_t *j, struct index *in) {
+    struct agg_avg *avg = calloc(1, sizeof(struct agg_avg));
+    struct agg *a = (struct agg *)avg;
+    a->kind = AGGK_METRIC;
+    a->type = AGG_AVG;
+    snprintf(a->name, sizeof(a->name), "%s", name);
+    json_t *f = json_object_get(j, JA_FIELD);
+    if (f) {
+        const char *field = json_string_value(f);
+        if (field) {
+            struct schema *s = get_field_schema(in, field);
+            if (s && s->is_indexed && (s->type == F_NUMBER || s->type == F_NUMLIST)) {
+                avg->field = s->i_priority;
+                a->consume = consume_avg_agg;
+                a->as_json = avg_agg_as_json;
+                a->dup = avg_agg_dup;
+                a->merge = avg_agg_merge;
+                a->free = avg_agg_free;
+                return a;
+            }
+        }
+    }
+    a->type = AGG_ERROR;
+    snprintf(a->name, sizeof(a->name), "Failed to parse avg aggr %s", name);
+    return a;
+}
+
 
 /************ MAX METRICS AGGREGATION ************/
 static void consume_max_agg(struct agg *a, struct index *in, uint32_t docid, void *data) {

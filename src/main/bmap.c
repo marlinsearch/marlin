@@ -237,6 +237,58 @@ struct bmap *bmap_and(const struct bmap *a, const struct bmap *b) {
     return r;
 }
 
+struct bmap *bmap_andnot(const struct bmap *a, const struct bmap *b) {
+    struct bmap *r = bmap_new();
+    r->needs_free = 1;
+    int pos1 = 0, pos2 = 0;
+    const int length1 = a->num_c, length2 = b->num_c;
+    if (length1 == 0) {
+        return r;
+    }
+
+    if (length2 == 0) {
+        bmap_free(r);
+        return bmap_duplicate(a);
+    }
+
+    while(pos1 < length1 && pos2 < length2) {
+        const uint16_t id1 = a->c[pos1].buffer[ID];
+        const uint16_t id2 = b->c[pos2].buffer[ID];
+        // printf("id2 %d id2 %d\n", id1, id2);
+        if (id1 == id2) {
+            struct cont *c = cont_andnot(&a->c[pos1],  &b->c[pos2]);
+            if (cont_cardinality(c) != 0) {
+                bmap_cont_add(r, c);
+            } else {
+                free(c->buffer);
+            }
+            free(c);
+            ++pos1;
+            ++pos2;
+        } else if (id1 < id2) {
+            int next_pos1 = bmap_advance(a, id2, pos1);
+            for (int i = pos1; i < next_pos1; i++) {
+                struct cont *copy = malloc(sizeof(struct cont));
+                copy->buffer = cont_duplicate(&a->c[i]);
+                bmap_cont_add(r, copy);
+                free(copy);
+            }
+            pos1 = next_pos1;
+        } else {
+            pos2 = bmap_advance(b, id1, pos2);
+        }
+    }
+    if (pos2 == length2) {
+        for (int i = pos1; i < length1; i++) {
+            struct cont *copy = malloc(sizeof(struct cont));
+            copy->buffer = cont_duplicate(&a->c[i]);
+            bmap_cont_add(r, copy);
+            free(copy);
+        }
+    }
+    return r;
+}
+
 void bmap_and_inplace(struct bmap *a, const struct bmap *b) {
     int pos1 = 0, pos2 = 0;
     int length1 = a->num_c, length2 = b->num_c;
@@ -441,24 +493,7 @@ struct bmap *oper_or(const struct oper *o) {
         bitset_cont_cardinality(c);
         // convert bitset container to proper containers
         if (cont_cardinality(c) <= CUTOFF) {
-            uint16_t *nb = malloc((2 + cont_cardinality(c)) * sizeof(uint16_t));
-            int p = 2;
-            uint32_t base = c->buffer[ID] << 16;
-            const uint64_t *buffer = (const uint64_t *)&c->buffer[2];
-            for (int i=0; i<BCUTOFF; i++) {
-                uint64_t w = buffer[i];
-                while (w != 0) {
-                    uint64_t t = w & (~w + 1);
-                    int r = __builtin_ctzll(w);
-                    nb[p++] = r+base;
-                    w ^= t;
-                }
-                base += 64;
-            }
-            nb[ID] = c->buffer[ID];
-            nb[CARDINALITY] = c->buffer[CARDINALITY];
-            free(c->buffer);
-            c->buffer = nb;
+            bitset_cont_to_array(c);
         }
     }
     return r;
@@ -520,51 +555,5 @@ bool bmap_exists(const struct bmap *b, uint32_t item) {
         return cont_exists(&b->c[pos], lowbits(item));
     }
     return false;
-}
-
-
-// TODO: Woah rewrite this !
-// Basically take input and remove everything from b
-struct bmap *bmap_invert(const struct bmap *b, const struct bmap *input) {
-    struct bmap *r = bmap_new();
-    struct bmap *rb = convert_to_bitset_bmap(input);
-    struct bmap *bb = convert_to_bitset_bmap(b);
-    for (int i = 0; i < bb->num_c; i++) {
-        int pos = binary_search(rb, bb->c[i].buffer[ID]);
-        if (pos >= 0) {
-            cont_invert(&rb->c[pos], &bb->c[i]);
-            if (cont_cardinality(&rb->c[pos])) {
-                struct cont *c = &rb->c[pos];
-                // convert bitset container to proper containers if required
-                if (cont_cardinality(c) <= CUTOFF) {
-                    uint16_t *nb = malloc((2 + cont_cardinality(c)) * sizeof(uint16_t));
-                    int p = 2;
-                    uint32_t base = c->buffer[ID] << 16;
-                    const uint64_t *buffer = (const uint64_t *)&c->buffer[2];
-                    for (int i=0; i<BCUTOFF; i++) {
-                        uint64_t w = buffer[i];
-                        while (w != 0) {
-                            uint64_t t = w & (~w + 1);
-                            int r = __builtin_ctzll(w);
-                            nb[p++] = r+base;
-                            w ^= t;
-                        }
-                        base += 64;
-                    }
-                    nb[ID] = c->buffer[ID];
-                    nb[CARDINALITY] = c->buffer[CARDINALITY];
-                    free(c->buffer);
-                    c->buffer = nb;
-                }
-                struct cont *nc = malloc(sizeof(struct cont));
-                nc->buffer = cont_duplicate(c);
-                bmap_cont_add(r, nc);
-                free(nc);
-            }
-        }
-    }
-    bmap_free(rb);
-    bmap_free(bb);
-    return r;
 }
 

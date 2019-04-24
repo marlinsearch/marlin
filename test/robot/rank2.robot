@@ -55,7 +55,6 @@ Test query why my
 
 Test query a
     POST         /1/indexes/testindex/query  {"q": "a new", "explain": true}
-    Output
     Integer     response status     200
     Integer     $.totalHits         1
 

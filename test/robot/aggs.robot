@@ -52,6 +52,11 @@ Test min aggr
     POST         /1/indexes/testindex/query  {"aggs": {"min_n": {"min": {"field": "n"}}, "min_nl": {"min": {"field": "nl"}}}}
     Integer     $.aggs.min_n.value  1
 
+Test avg aggr
+    POST         /1/indexes/testindex/query  {"aggs": {"avg_n": {"avg": {"field": "n"}}}}
+    Number       $.aggs.avg_n.value  4.6
+
+
 Delete the index
     Set Headers  ${appheader}
     DELETE      /1/indexes/testindex

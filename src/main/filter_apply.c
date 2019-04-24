@@ -9,6 +9,9 @@ static inline void bool_eq_filter(struct sindex *si, struct filter *f,
         MDB_txn *txn, struct bmap *docs) {
     uint64_t bhid = IDPRIORITY(f->numval, f->s->i_priority);
     f->fr_bmap = mbmap_load_bmap(txn, si->boolid2bmap_dbi, bhid);
+    if (!f->fr_bmap) {
+        f->fr_bmap = bmap_new();
+    }
 }
 
 static inline void str_eq_filter(struct sindex *si, struct filter *f, 
@@ -22,6 +25,9 @@ static inline void str_eq_filter(struct sindex *si, struct filter *f,
     uint32_t facet_id = farmhash32(f->strval, strlen(f->strval));
     uint64_t fhid = IDPRIORITY(facet_id, f->s->f_priority);
     f->fr_bmap = mbmap_load_bmap(txn, si->facetid2bmap_dbi, fhid);
+    if (!f->fr_bmap) {
+        f->fr_bmap = bmap_new();
+    }
 }
 
 static inline void num_eq_filter(struct sindex *in, struct filter *f, 
@@ -47,10 +53,6 @@ static inline void num_eq_filter(struct sindex *in, struct filter *f,
         }
     }
     mdb_cursor_close(cursor);
-    if (f->fr_bmap->num_c == 0) {
-        bmap_free(f->fr_bmap);
-        f->fr_bmap = NULL;
-    }
 }
 
 /* Equal filter, based on filter field type choose appropriate filter */
@@ -77,7 +79,7 @@ static void ne_filter(struct sindex *in, struct filter *f, MDB_txn *txn, struct 
     if (!f->fr_bmap) {
         f->fr_bmap = bmap_duplicate(docs);
     } else {
-        struct bmap *b = bmap_invert(f->fr_bmap, docs);
+        struct bmap *b = bmap_andnot(docs, f->fr_bmap);
         bmap_free(f->fr_bmap);
         f->fr_bmap = b;
     }
@@ -93,10 +95,6 @@ static void or_filter(struct sindex *si, struct filter *f, MDB_txn *txn, struct 
         }
     }
     f->fr_bmap = oper_or(bso);
-    if (bmap_cardinality(f->fr_bmap) == 0) {
-        bmap_free(f->fr_bmap);
-        f->fr_bmap = NULL;
-    }
     oper_free(bso);
 }
 
@@ -109,10 +107,6 @@ static void and_filter(struct sindex *si, struct filter *f, MDB_txn *txn, struct
         }
     }
     f->fr_bmap = oper_and(bso);
-    if (bmap_cardinality(f->fr_bmap) == 0) {
-        bmap_free(f->fr_bmap);
-        f->fr_bmap = NULL;
-    }
     oper_free(bso);
 }
 
@@ -124,7 +118,7 @@ static void nin_filter(struct sindex *si, struct filter *f, MDB_txn *txn, struct
     if (!f->fr_bmap) {
         f->fr_bmap = bmap_duplicate(docs);
     } else {
-        struct bmap *b = bmap_invert(f->fr_bmap, docs);
+        struct bmap *b = bmap_andnot(docs, f->fr_bmap);
         bmap_free(f->fr_bmap);
         f->fr_bmap = b;
     }

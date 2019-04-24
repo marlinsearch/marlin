@@ -19,7 +19,15 @@ struct agg_min{
     double value;
 };
 
+struct agg_avg {
+    struct agg a;
+    int field;
+    double value;
+    int count;
+};
+
 struct agg *parse_max_agg(const char *name, json_t *j, struct index *in);
 struct agg *parse_min_agg(const char *name, json_t *j, struct index *in);
+struct agg *parse_avg_agg(const char *name, json_t *j, struct index *in);
 
 #endif
