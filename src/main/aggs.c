@@ -99,6 +99,8 @@ const struct agg_info aggs[] = {
     {"min", parse_min_agg},
     // Avg - metric aggregation
     {"avg", parse_avg_agg},
+    // Stags - metric aggregation
+    {"stats", parse_stats_agg},
     {NULL, NULL}
 };
 

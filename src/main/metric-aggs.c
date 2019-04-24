@@ -1,20 +1,105 @@
 #include "metric-aggs.h"
 #include "float.h"
 
+
+/****************** Common functions **********************/
+static void metric_agg_free(struct agg *f) {
+    free(f);
+}
+
+
+/************ STATS METRICS AGGREGATION ************/
+static void consume_stats_agg(struct agg *a, struct index *in, uint32_t docid, void *data) {
+    struct agg_stats *am = (struct agg_stats *)a;
+    uint8_t *pos = data;
+    double *dpos = (double *)(pos + sizeof(uint32_t));
+    // TODO: Handle NULL values
+    double val = dpos[am->field];
+    am->sum += val;
+    if (val < am->min) {
+        am->min = val;
+    }
+    if (val > am->max) {
+        am->max = val;
+    }
+    am->count++;
+}
+
+static json_t *stats_agg_as_json(struct agg *a) {
+    struct agg_stats *am = (struct agg_stats *)a;
+    json_t *j = json_object();
+    json_object_set_new(j, JA_AVG, json_real((am->sum / am->count)));
+    json_object_set_new(j, JA_SUM, json_real(am->sum));
+    json_object_set_new(j, JA_MIN, json_real(am->min));
+    json_object_set_new(j, JA_MAX, json_real(am->max));
+    json_object_set_new(j, JA_COUNT, json_integer(am->count));
+    return j;
+}
+
+static struct agg *stats_agg_dup(const struct agg *a) {
+    struct agg_stats *stats = malloc(sizeof(struct agg_stats));
+    memcpy(stats, a, sizeof(struct agg_stats));
+    return (struct agg *)stats;
+}
+
+static void stats_agg_merge(struct agg *into, const struct agg *from) {
+    struct agg_stats *f = (struct agg_stats *)from;
+    struct agg_stats *i = (struct agg_stats *)into;
+    i->sum += f->sum;
+    i->count += f->count;
+    if (f->min < i->min) {
+        i->min = f->min;
+    }
+    if (f->max > i->max) {
+        i->max = f->max;
+    }
+}
+
+struct agg *parse_stats_agg(const char *name, json_t *j, struct index *in) {
+    struct agg_stats *stats = calloc(1, sizeof(struct agg_stats));
+    struct agg *a = (struct agg *)stats;
+    a->kind = AGGK_METRIC;
+    a->type = AGG_STATS;
+    snprintf(a->name, sizeof(a->name), "%s", name);
+    json_t *f = json_object_get(j, JA_FIELD);
+    if (f) {
+        const char *field = json_string_value(f);
+        if (field) {
+            struct schema *s = get_field_schema(in, field);
+            if (s && s->is_indexed && (s->type == F_NUMBER || s->type == F_NUMLIST)) {
+                stats->field = s->i_priority;
+                stats->min = DBL_MAX;
+                stats->max = -DBL_MAX;
+                a->consume = consume_stats_agg;
+                a->as_json = stats_agg_as_json;
+                a->dup = stats_agg_dup;
+                a->merge = stats_agg_merge;
+                a->free = metric_agg_free;
+                return a;
+            }
+        }
+    }
+    a->type = AGG_ERROR;
+    snprintf(a->name, sizeof(a->name), "Failed to parse stats aggr %s", name);
+    return a;
+}
+
+
+
 /************ AVG METRICS AGGREGATION ************/
 static void consume_avg_agg(struct agg *a, struct index *in, uint32_t docid, void *data) {
     struct agg_avg *am = (struct agg_avg *)a;
     uint8_t *pos = data;
     double *dpos = (double *)(pos + sizeof(uint32_t));
     // TODO: Handle NULL values
-    am->value += (dpos[am->field]);
+    am->sum += (dpos[am->field]);
     am->count++;
 }
 
 static json_t *avg_agg_as_json(struct agg *a) {
     struct agg_avg *am = (struct agg_avg *)a;
     json_t *j = json_object();
-    json_object_set_new(j, JA_VALUE, json_real((am->value / am->count)));
+    json_object_set_new(j, JA_VALUE, json_real((am->sum / am->count)));
     return j;
 }
 
@@ -27,12 +112,8 @@ static struct agg *avg_agg_dup(const struct agg *a) {
 static void avg_agg_merge(struct agg *into, const struct agg *from) {
     struct agg_avg *f = (struct agg_avg *)from;
     struct agg_avg *i = (struct agg_avg *)into;
-    i->value += f->value;
+    i->sum += f->sum;
     i->count += f->count;
-}
-
-static void avg_agg_free(struct agg *f) {
-    free(f);
 }
 
 struct agg *parse_avg_agg(const char *name, json_t *j, struct index *in) {
@@ -52,7 +133,7 @@ struct agg *parse_avg_agg(const char *name, json_t *j, struct index *in) {
                 a->as_json = avg_agg_as_json;
                 a->dup = avg_agg_dup;
                 a->merge = avg_agg_merge;
-                a->free = avg_agg_free;
+                a->free = metric_agg_free;
                 return a;
             }
         }
@@ -94,10 +175,6 @@ static void max_agg_merge(struct agg *into, const struct agg *from) {
     }
 }
 
-static void max_agg_free(struct agg *f) {
-    free(f);
-}
-
 struct agg *parse_max_agg(const char *name, json_t *j, struct index *in) {
     struct agg_max *max = calloc(1, sizeof(struct agg_max));
     struct agg *a = (struct agg *)max;
@@ -116,7 +193,7 @@ struct agg *parse_max_agg(const char *name, json_t *j, struct index *in) {
                 a->as_json = max_agg_as_json;
                 a->dup = max_agg_dup;
                 a->merge = max_agg_merge;
-                a->free = max_agg_free;
+                a->free = metric_agg_free;
                 return a;
             }
         }
@@ -158,10 +235,6 @@ static void min_agg_merge(struct agg *into, const struct agg *from) {
     }
 }
 
-static void min_agg_free(struct agg *f) {
-    free(f);
-}
-
 struct agg *parse_min_agg(const char *name, json_t *j, struct index *in) {
     struct agg_min *min = calloc(1, sizeof(struct agg_min));
     struct agg *a = (struct agg *)min;
@@ -180,7 +253,7 @@ struct agg *parse_min_agg(const char *name, json_t *j, struct index *in) {
                 a->as_json = min_agg_as_json;
                 a->dup = min_agg_dup;
                 a->merge = min_agg_merge;
-                a->free = min_agg_free;
+                a->free = metric_agg_free;
                 return a;
             }
         }

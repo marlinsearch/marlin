@@ -56,6 +56,14 @@ Test avg aggr
     POST         /1/indexes/testindex/query  {"aggs": {"avg_n": {"avg": {"field": "n"}}}}
     Number       $.aggs.avg_n.value  4.6
 
+Test stats aggr
+    POST         /1/indexes/testindex/query  {"aggs": {"stats": {"stats": {"field": "n"}}}}
+    Number       $.aggs.stats.avg       4.6
+    Number       $.aggs.stats.count     5
+    Integer      $.aggs.stats.min       1
+    Integer      $.aggs.stats.max       11
+    Integer      $.aggs.stats.sum       23
+
 
 Delete the index
     Set Headers  ${appheader}

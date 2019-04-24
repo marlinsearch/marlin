@@ -221,12 +221,10 @@ static int difference_uint16(const uint16_t *a1, int length1, const uint16_t *a2
     int out_card = 0;
     int k1 = 0, k2 = 0;
     if (length1 == 0) {
-        printf("len1 zero\n");
         return 0;
     }
     if (length2 == 0) {
         if (a1 != a_out) memcpy(a_out, a1, sizeof(uint16_t) * length1);
-        printf("len2 zero\n");
         return length1;
     }
     uint16_t s1 = a1[k1];
