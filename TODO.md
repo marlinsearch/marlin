@@ -11,6 +11,8 @@
 - [x] Highlighting
 - [x] Snippets
 - [x] Restrict fields to return
+- [ ] Basic aggregations
+- [ ] Clear / Delete should return immediately
 - [ ] Reindexing
 - [ ] Mapping updates on reconfiguration
 - [ ] Documentation
@@ -77,4 +79,4 @@
 - [ ] facet.robot
 - [ ] sort.robot
 - [ ] rank_terms.robot
-- [ ] aggs.robot
+

@@ -12,6 +12,7 @@
 #include "filter_apply.h"
 #include "bmap.h"
 #include "ksort.h"
+#include "aggs.h"
 
 #define facet_gt(a, b) ((a).count > (b).count)
 KSORT_INIT(facet_sort, facet_count_t, facet_gt)
@@ -488,6 +489,7 @@ void execute_squery(void *w) {
     }
 
     trace_query("Applied filters in", &start);
+    sq->kh_idnum2dbl = kh_init(IDNUM2DBL);
     // Copy aggs if required
     if (sq->q->agg) {
         sq->sqres->agg = aggs_dup(sq->q->agg);
@@ -501,6 +503,9 @@ void execute_squery(void *w) {
     struct docrank *ranks = perform_ranking(sq, sq->sqres->docid_map, &resultcount);
     trace_query("Ranks calculated in", &start);
     //dump_bmap(sq->sqres->docid_map);
+
+    // Aggregation should be done by now, clear the cache
+    kh_destroy(IDNUM2DBL, sq->kh_idnum2dbl);
 
     // Sort facet results
     sq->sqres->fc = sort_facets(sq);

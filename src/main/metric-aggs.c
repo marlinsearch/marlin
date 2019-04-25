@@ -20,11 +20,11 @@ static void card_agg_free(struct agg *a) {
     free(ac);
 }
 
-static void consume_card_agg(struct agg *a, struct index *in, uint32_t docid, void *data) {
+static void consume_card_agg(struct agg *a, struct squery *sq, uint32_t docid, void *data) {
     struct agg_card *ac = (struct agg_card *)a;
     uint8_t *pos = data;
     pos = pos + sizeof(uint32_t); // Skip offset
-    struct mapping *m = in->mapping;
+    struct mapping *m = sq->shard->index->mapping;
     // calculate facet offset
     size_t fo = m->num_numbers * sizeof(double);
     // Get the facet position
@@ -102,22 +102,60 @@ struct agg *parse_card_agg(const char *name, json_t *j, struct index *in) {
     return a;
 }
 
+static double get_num_value(struct squery *sq, uint32_t docid, void *data, int priority) {
+    double val = -DBL_MAX;
+    if (data) {
+        uint8_t *pos = data;
+        double *dpos = (double *)(pos + sizeof(uint32_t));
+        // TODO: Handle NULL values
+        val = dpos[priority];
+    } else {
+        int docpos = docid % 1000;
+        uint64_t docgrp_id = IDNUM((docid - docpos), priority);
+        khash_t(IDNUM2DBL) *kh = sq->kh_idnum2dbl;
+        khiter_t k = kh_get(IDNUM2DBL, kh, docgrp_id);
+        double *grpd = NULL;
+
+        if (k == kh_end(kh)) {
+            // We need to add the entry to be written
+            int ret = 0;
+            k = kh_put(IDNUM2DBL, kh, docgrp_id, &ret);
+
+            // Check if it already exists in lmdb
+            MDB_val key, data;
+            key.mv_size = sizeof(uint64_t);
+            key.mv_data = (void *)&docgrp_id;
+            // If it already exists, we need not write so set a NULL value to 
+            // avoid looking up mdb everytime we encounter this facetid
+            if (mdb_get(sq->txn, sq->shard->sindex->idnum2dbl_dbi, &key, &data) == 0) {
+                grpd = data.mv_data;
+            }
+            kh_value(kh, k) = grpd;
+        } else {
+            grpd = kh_value(kh, k);
+        }
+        if (grpd) {
+            return grpd[docpos];
+        }
+    }
+    return val;
+}
+
 
 /************ STATS METRICS AGGREGATION ************/
-static void consume_stats_agg(struct agg *a, struct index *in, uint32_t docid, void *data) {
+static void consume_stats_agg(struct agg *a, struct squery *sq, uint32_t docid, void *data) {
     struct agg_stats *am = (struct agg_stats *)a;
-    uint8_t *pos = data;
-    double *dpos = (double *)(pos + sizeof(uint32_t));
-    // TODO: Handle NULL values
-    double val = dpos[am->field];
-    am->sum += val;
-    if (val < am->min) {
-        am->min = val;
+    double val = get_num_value(sq, docid, data, am->field);
+    if (val != -DBL_MAX) {
+        am->sum += val;
+        if (val < am->min) {
+            am->min = val;
+        }
+        if (val > am->max) {
+            am->max = val;
+        }
+        am->count++;
     }
-    if (val > am->max) {
-        am->max = val;
-    }
-    am->count++;
 }
 
 static json_t *stats_agg_as_json(struct agg *a) {
@@ -182,13 +220,13 @@ struct agg *parse_stats_agg(const char *name, json_t *j, struct index *in) {
 
 
 /************ AVG METRICS AGGREGATION ************/
-static void consume_avg_agg(struct agg *a, struct index *in, uint32_t docid, void *data) {
+static void consume_avg_agg(struct agg *a, struct squery *sq, uint32_t docid, void *data) {
     struct agg_avg *am = (struct agg_avg *)a;
-    uint8_t *pos = data;
-    double *dpos = (double *)(pos + sizeof(uint32_t));
-    // TODO: Handle NULL values
-    am->sum += (dpos[am->field]);
-    am->count++;
+    double val = get_num_value(sq, docid, data, am->field);
+    if (val != -DBL_MAX) {
+        am->sum += val;
+        am->count++;
+    }
 }
 
 static json_t *avg_agg_as_json(struct agg *a) {
@@ -240,12 +278,13 @@ struct agg *parse_avg_agg(const char *name, json_t *j, struct index *in) {
 
 
 /************ MAX METRICS AGGREGATION ************/
-static void consume_max_agg(struct agg *a, struct index *in, uint32_t docid, void *data) {
+static void consume_max_agg(struct agg *a, struct squery *sq, uint32_t docid, void *data) {
     struct agg_max *am = (struct agg_max *)a;
-    uint8_t *pos = data;
-    double *dpos = (double *)(pos + sizeof(uint32_t));
-    if (dpos[am->max_field] > am->value) {
-        am->value = dpos[am->max_field];
+    double val = get_num_value(sq, docid, data, am->max_field);
+    if (val != -DBL_MAX) {
+        if (val > am->value) {
+            am->value = val;
+        }
     }
 }
 
@@ -300,12 +339,13 @@ struct agg *parse_max_agg(const char *name, json_t *j, struct index *in) {
 
 // TODO: DRY.. combine max & min aggr
 /************ MIN METRICS AGGREGATION ************/
-static void consume_min_agg(struct agg *a, struct index *in, uint32_t docid, void *data) {
+static void consume_min_agg(struct agg *a, struct squery *sq, uint32_t docid, void *data) {
     struct agg_min *am = (struct agg_min *)a;
-    uint8_t *pos = data;
-    double *dpos = (double *)(pos + sizeof(uint32_t));
-    if (dpos[am->min_field] < am->value) {
-        am->value = dpos[am->min_field];
+    double val = get_num_value(sq, docid, data, am->min_field);
+    if (val != -DBL_MAX) {
+        if (val < am->value) {
+            am->value = val;
+        }
     }
 }
 

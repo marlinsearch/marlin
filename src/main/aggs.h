@@ -1,7 +1,8 @@
 #ifndef __AGGS_H__
 #define __AGGS_H__
+
 #include "common.h"
-#include "index.h"
+#include "squery.h"
 
 typedef enum agg_type {
     AGG_ROOT,
@@ -23,7 +24,7 @@ typedef enum agg_kind {
 struct agg;
 
 typedef void (*parse_agg_f) (json_t *j);
-typedef void (*consume_f) (struct agg *a, struct index *in, uint32_t docid, void *data);
+typedef void (*consume_f) (struct agg *a, struct squery *sq, uint32_t docid, void *data);
 typedef json_t *(*as_json_f) (struct agg *a);
 typedef struct agg *(*agg_dup_f) (const struct agg *a);
 typedef void (*merge_agg_f) (struct agg *info, const struct agg *from);
@@ -48,3 +49,4 @@ struct agg *detect_and_parse(const char *key, json_t *j, struct index *in);
 struct agg *aggs_dup(const struct agg *a);
 
 #endif
+

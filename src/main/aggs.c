@@ -7,10 +7,10 @@ struct agg_info {
 };
 
 
-static void consume_root_agg(struct agg *a, struct index *in, uint32_t docid, void *data) {
+static void consume_root_agg(struct agg *a, struct squery *sq, uint32_t docid, void *data) {
     for (int i = 0; i < kv_size(a->children); i++) {
         struct agg *c = kv_A(a->children, i);
-        c->consume(c, in, docid, data);
+        c->consume(c, sq, docid, data);
     }
 }
 

@@ -43,6 +43,7 @@ struct write_cache {
     khash_t(WID2MBMAP) *kh_twid2bmap;       // Top-Level word id to docid bmap
     khash_t(WID2MBMAP) *kh_twid2widbmap;    // Top-level word id to wid bmap
     khash_t(WID2MBMAP) *kh_phrasebmap;      // Adjacent word id to docid bmap
+    khash_t(IDNUM2DBL) *kh_idnum2dbl;       // IDNUM to double values
 
     // Per document index info
     struct doc_data od;
@@ -71,6 +72,7 @@ struct sindex {
     MDB_dbi wid2bmap_dbi;       // Word id to bitmap of docids containing that wid
     MDB_dbi docid2data_dbi;     // docid to index data
     MDB_dbi phrase_dbi;         // Phrase query dbi, adjacent wids mapped to docids containing the pair
+    MDB_dbi idnum2dbl_dbi;      // Aggregations index
 #ifdef TRACK_WIDS
     MDB_dbi wid2chr_dbi;        //
 #endif

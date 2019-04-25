@@ -242,6 +242,7 @@ char *highlight(const char *str, struct query *q, int snip_num_words) {
 
         struct token *t = kv_A(tokens, i);
         // Make sure we are not overlapping
+        // NOTE: Crash here.. debug // CRASH : TODO
         if (kv_A(t->se, 0)->start < last_match_end) continue;
 
         // Find a match by looking at all terms

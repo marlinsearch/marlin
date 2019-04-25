@@ -855,6 +855,7 @@ static void index_destroy_threadpool(struct index *in) {
 }
 
 // TODO: This should be a clear job as requests may be in progress?
+// and do not hold up the response until clear is complete
 static char *index_clear_callback(h2o_req_t *req, void *data) {
     struct index *in = data;
     index_destroy_threadpool(in);
