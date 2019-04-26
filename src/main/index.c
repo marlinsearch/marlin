@@ -855,6 +855,7 @@ static void index_destroy_threadpool(struct index *in) {
 }
 
 // TODO: This should be a clear job as requests may be in progress?
+// and do not hold up the response until clear is complete
 static char *index_clear_callback(h2o_req_t *req, void *data) {
     struct index *in = data;
     index_destroy_threadpool(in);
@@ -1079,9 +1080,14 @@ static char *index_query_callback(h2o_req_t *req, void *data) {
             }
         }
         json_t *ja = json_object_get(jq, J_AGGS);
-        // We have a filter, let us parse it
+        // We have an aggregation, let us parse it
         if (ja && !json_is_null(ja) && json_object_size(ja)) {
             q->agg = parse_aggs(ja, in);
+            if (q->agg && q->agg->type == AGG_ERROR) {
+                req->res.status = 400;
+                response = failure_message(q->agg->name);
+                goto send_response;
+            }
         }
 
         json_t *jp = json_object_get(jq, J_PAGE);

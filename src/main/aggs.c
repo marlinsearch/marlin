@@ -7,10 +7,10 @@ struct agg_info {
 };
 
 
-static void consume_root_agg(struct agg *a, struct index *in, uint32_t docid, void *data) {
+static void consume_root_agg(struct agg *a, struct squery *sq, uint32_t docid, void *data) {
     for (int i = 0; i < kv_size(a->children); i++) {
         struct agg *c = kv_A(a->children, i);
-        c->consume(c, in, docid, data);
+        c->consume(c, sq, docid, data);
     }
 }
 
@@ -78,6 +78,7 @@ static struct agg *parse_root_agg(const char *name, json_t *j, struct index *in)
             // aggregation, copy over the error
             root->type = AGG_ERROR;
             snprintf(root->name, sizeof(root->name), "%s", c->name);
+            c->free(c);
             break;
         } else {
             // We have a properly parsed aggregation, add it as a child
@@ -101,6 +102,8 @@ const struct agg_info aggs[] = {
     {"avg", parse_avg_agg},
     // Stags - metric aggregation
     {"stats", parse_stats_agg},
+    // Cardinality - metric aggregation
+    {"cardinality", parse_card_agg},
     {NULL, NULL}
 };
 

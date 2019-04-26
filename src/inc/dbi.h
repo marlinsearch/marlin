@@ -17,6 +17,7 @@
 #define DBI_WID2BMAP        "wid2bmap_dbi"
 #define DBI_DOCID2DATA      "docid2data_dbi"
 #define DBI_PHRASE          "phrase_dbi"
+#define DBI_IDNUM2DBL       "idnum2dbl_dbi"
 
 #endif
 

@@ -609,7 +609,7 @@ void register_api_callback(const char *appid, const char *apikey,
                            const char *method, const char *url, struct url_cbdata *cbdata) {
     char hashurl[1024];
     snprintf(hashurl, sizeof(hashurl), "%s-%s-%s-%s", appid, apikey, method, url);
-    M_DBG("Register callback %s", hashurl);
+    //M_DBG("Register callback %s", hashurl);
     khiter_t k;
     int ret;
     // Deregister existing callback if any, before registering
@@ -629,7 +629,7 @@ void deregister_api_callback(const char *appid, const char *apikey, const char *
         const char *url) {
     char hashurl[1024];
     snprintf(hashurl, sizeof(hashurl), "%s-%s-%s-%s", appid, apikey, method, url);
-    M_DBG("De-Register callback %s", hashurl);
+    //M_DBG("De-Register callback %s", hashurl);
     WRLOCK(&url_lock);
     khiter_t k = kh_get(URL_CBDATA, urlmap, hashurl);
     if (k != kh_end(urlmap)) {

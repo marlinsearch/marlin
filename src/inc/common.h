@@ -7,8 +7,9 @@
 
 #include "platform.h"
 #include "mlog.h"
+#include "khash.h"
 
-#define VALGRIND_TEST 1
+#define VALGRIND_TEST 0
 
 #if VALGRIND_TEST
 #define MDB_ENV_SIZE        655360000
@@ -20,6 +21,8 @@
 
 #define IDPRIORITY(id, priority) ((uint64_t) id << 32 | priority << 16)
 #define IDPHRASE(id, id2) ((uint64_t) id << 32 | id2 << 12)
+#define IDNUM(id, priority) ((uint64_t) id << 32 | priority << 24)
+#define IDFACET(id, priority) ((uint64_t) id << 32 | priority << 16)
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
@@ -131,6 +134,7 @@
 #define ORDER_DESC          "desc"
 #define MAX_FIELD_NAME 256
 
+KHASH_MAP_INIT_INT64(IDNUM2DBL, double *) // Aggregation id num to double array
 
 #endif
 

@@ -47,14 +47,20 @@ Test a empty query
 Test max aggr
     POST         /1/indexes/testindex/query  {"aggs": {"max_n": {"max": {"field": "n"}}, "max_nl": {"max": {"field": "nl"}}}}
     Integer     $.aggs.max_n.value  11
+    POST         /1/indexes/testindex/query  {"aggs": {"max_n": {"max": {"field": "n"}}, "max_nl": {"max": {"field": "str"}}}}
+    Integer     response status     400
 
 Test min aggr
     POST         /1/indexes/testindex/query  {"aggs": {"min_n": {"min": {"field": "n"}}, "min_nl": {"min": {"field": "nl"}}}}
     Integer     $.aggs.min_n.value  1
+    POST         /1/indexes/testindex/query  {"aggs": {"max_n": {"max": {"field": "n"}}, "max_nl": {"min": {"field": "str"}}}}
+    Integer     response status     400
 
 Test avg aggr
     POST         /1/indexes/testindex/query  {"aggs": {"avg_n": {"avg": {"field": "n"}}}}
     Number       $.aggs.avg_n.value  4.6
+    POST         /1/indexes/testindex/query  {"aggs": {"max_n": {"max": {"field": "n"}}, "max_nl": {"avg": {"field": "str"}}}}
+    Integer     response status     400
 
 Test stats aggr
     POST         /1/indexes/testindex/query  {"aggs": {"stats": {"stats": {"field": "n"}}}}
@@ -63,7 +69,20 @@ Test stats aggr
     Integer      $.aggs.stats.min       1
     Integer      $.aggs.stats.max       11
     Integer      $.aggs.stats.sum       23
+    POST         /1/indexes/testindex/query  {"aggs": {"max_n": {"max": {"field": "n"}}, "max_nl": {"stats": {"field": "str"}}}}
+    Integer     response status     400
 
+Test card aggr
+    POST         /1/indexes/testindex/query  {"aggs": {"card": {"cardinality": {"field": "str"}}}}
+    Integer     response status     400
+    POST         /1/indexes/testindex/query  {"aggs": {"card": {"cardinality": {"id": "n"}}}}
+    Integer     response status     400
+    POST         /1/indexes/testindex/query  {"aggs": {"card": {"carity": {"id": "n"}}}}
+    Integer     response status     400
+    POST         /1/indexes/testindex/query  {"aggs": {"card": {"cardinality": {"field": "f"}}}}
+    Integer     $.aggs.card.value   4
+    POST         /1/indexes/testindex/query  {"aggs": {"card": {"cardinality": {"field": "nl"}}}}
+    Integer     $.aggs.card.value   7
 
 Delete the index
     Set Headers  ${appheader}

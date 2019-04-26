@@ -6,7 +6,7 @@
 #include "workers.h"
 #include "mbmap.h"
 #include "hashtable.h"
-#include "aggs.h"
+
 
 typedef struct termdata {
     termresult_t *tresult;
@@ -50,6 +50,7 @@ struct squery {
     struct query *q;
     struct squery_result *sqres;
     struct shard *shard;
+    khash_t(IDNUM2DBL) *kh_idnum2dbl;   // IDNUM to double values
     bool fast_rank;    // Did we do a partial scan for processing this query?
     int shard_idx;
     MDB_txn *txn;

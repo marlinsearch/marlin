@@ -75,6 +75,7 @@ static void si_write_start(struct sindex *si) {
     si->wc->kh_twid2bmap = kh_init(WID2MBMAP);
     si->wc->kh_twid2widbmap = kh_init(WID2MBMAP);
     si->wc->kh_phrasebmap = kh_init(WID2MBMAP);
+    si->wc->kh_idnum2dbl = kh_init(IDNUM2DBL);
  
     // Setup per obj data
     struct doc_data *od = &si->wc->od;
@@ -95,8 +96,8 @@ static void si_write_start(struct sindex *si) {
 }
 
 /* Stores a id to bitmap mapping in lmdb.  It deletes a mbmap if required */
-static inline void store_id2mbmap(struct sindex *si, struct mbmap *b, MDB_dbi dbi, MDB_txn *txn) {
-    if (UNLIKELY(!mbmap_save(b, txn, dbi))) {
+static inline void store_id2mbmap(struct sindex *si, struct mbmap *b, MDB_dbi dbi) {
+    if (UNLIKELY(!mbmap_save(b, si->txn, dbi))) {
 #if 0
         // NOTE: facet may belong to some other dbi too as all facet_ids are shared.
         // figure out how to handle this
@@ -132,6 +133,18 @@ static void store_facetid2str(struct sindex *si, uint32_t id, char *str) {
     } 
 }
 
+static void store_idnum2dbl(struct sindex *si, uint64_t id, double *d) {
+    MDB_val key, data;
+    data.mv_size = 1000 * sizeof(double);
+    data.mv_data = (void *)d;
+
+    key.mv_size = sizeof(uint64_t);
+    key.mv_data = &id;
+    int rc = mdb_put(si->txn, si->idnum2dbl_dbi, &key, &data, 0);
+    if (rc != 0) {
+        M_ERR("MDB put failure facetid2str %s", mdb_strerror(rc));
+    } 
+}
 
 static void si_write_end(struct sindex *si) {
 
@@ -139,36 +152,36 @@ static void si_write_end(struct sindex *si) {
 
     // Store bool id to bmap mapping
     kh_foreach_value(si->wc->kh_boolid2bmap, mbmap, {
-        store_id2mbmap(si, mbmap, si->boolid2bmap_dbi, si->txn);
+        store_id2mbmap(si, mbmap, si->boolid2bmap_dbi);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_boolid2bmap);
 
     // Store facet id to bmap mapping
     kh_foreach_value(si->wc->kh_facetid2bmap, mbmap, {
-        store_id2mbmap(si, mbmap, si->facetid2bmap_dbi, si->txn);
+        store_id2mbmap(si, mbmap, si->facetid2bmap_dbi);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_facetid2bmap);
 
     // Store twid to wid mapping
     kh_foreach_value(si->wc->kh_twid2widbmap, mbmap, {
-        store_id2mbmap(si, mbmap, si->twid2widbmap_dbi, si->txn);
+        store_id2mbmap(si, mbmap, si->twid2widbmap_dbi);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_twid2widbmap);
 
     // Store twid to docid mapping
     kh_foreach_value(si->wc->kh_twid2bmap, mbmap, {
-        store_id2mbmap(si, mbmap, si->twid2bmap_dbi, si->txn);
+        store_id2mbmap(si, mbmap, si->twid2bmap_dbi);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_twid2bmap);
 
     // Store wid to docid mapping
     kh_foreach_value(si->wc->kh_wid2bmap, mbmap, {
-        store_id2mbmap(si, mbmap, si->wid2bmap_dbi, si->txn);
+        store_id2mbmap(si, mbmap, si->wid2bmap_dbi);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_wid2bmap);
     // Store phrase to docid mapping
     kh_foreach_value(si->wc->kh_phrasebmap, mbmap, {
-        store_id2mbmap(si, mbmap, si->phrase_dbi, si->txn);
+        store_id2mbmap(si, mbmap, si->phrase_dbi);
     });
     kh_destroy(WID2MBMAP, si->wc->kh_phrasebmap);
 
@@ -184,6 +197,14 @@ static void si_write_end(struct sindex *si) {
         }
     });
     kh_destroy(FACETID2STR, si->wc->kh_facetid2str);
+
+	uint64_t grpid;
+	double *d;
+    kh_foreach(si->wc->kh_idnum2dbl, grpid, d, {
+        store_idnum2dbl(si, grpid, d);
+        free(d);
+    });
+    kh_destroy(IDNUM2DBL, si->wc->kh_idnum2dbl);
 
     dtrie_write_end(si->trie, si->boolid2bmap_dbi, si->txn);
     // Commit write transaction
@@ -476,6 +497,35 @@ static inline void index_number(struct sindex *si, int priority, double d) {
     data.mv_size = sizeof(docid);
     data.mv_data = &docid;
     mdb_put(si->txn, si->num_dbi[priority], &key, &data, 0);
+
+    // See if aggregate data for this group already exists
+    int docpos = docid % 1000;
+    uint64_t docgrp_id = IDNUM((docid - docpos), priority);
+    khash_t(IDNUM2DBL) *kh = si->wc->kh_idnum2dbl;
+    khiter_t k = kh_get(IDNUM2DBL, kh, docgrp_id);
+    double *grpd = NULL;
+
+    if (k == kh_end(kh)) {
+        // We need to add the entry to be written
+        int ret = 0;
+        k = kh_put(IDNUM2DBL, kh, docgrp_id, &ret);
+
+        // Check if it already exists in lmdb
+        MDB_val key, data;
+        key.mv_size = sizeof(uint64_t);
+        key.mv_data = (void *)&docgrp_id;
+
+        if (mdb_get(si->txn, si->idnum2dbl_dbi, &key, &data) == 0) {
+            grpd = malloc(1000 * sizeof(double));
+            memcpy(grpd, data.mv_data, data.mv_size);
+        } else {
+            grpd = calloc(1000, sizeof(double));
+        }
+        kh_value(kh, k) = grpd;
+    } else {
+        grpd = kh_value(kh, k);
+    }
+    grpd[docpos] = d;
 }
 
 /* Deindexes a double in the respective num_dbi */
@@ -1084,6 +1134,9 @@ void sindex_clear(struct sindex *si, int close) {
     if ((rc = mdb_drop(si->txn, si->twid2widbmap_dbi, close)) != 0) {
         M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
     }
+    if ((rc = mdb_drop(si->txn, si->idnum2dbl_dbi, close)) != 0) {
+        M_ERR("Failed to drop dbi %d %s", rc, mdb_strerror(rc));
+    }
     // If we have a mapping and some numbers, clear respective
     // num_dbi
     if (si->map) {
@@ -1148,6 +1201,7 @@ struct sindex *sindex_new(struct shard *shard) {
     mdb_dbi_open(si->txn, DBI_WID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->wid2bmap_dbi);
     mdb_dbi_open(si->txn, DBI_DOCID2DATA, MDB_CREATE|MDB_INTEGERKEY, &si->docid2data_dbi);
     mdb_dbi_open(si->txn, DBI_PHRASE, MDB_CREATE|MDB_INTEGERKEY, &si->phrase_dbi);
+    mdb_dbi_open(si->txn, DBI_IDNUM2DBL, MDB_CREATE|MDB_INTEGERKEY, &si->idnum2dbl_dbi);
 #ifdef TRACK_WIDS
     mdb_dbi_open(si->txn, "wid2chrdbi", MDB_CREATE|MDB_INTEGERKEY, &si->wid2chr_dbi);
 #endif

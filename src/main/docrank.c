@@ -3,6 +3,7 @@
 #include "ksort.h"
 #include "common.h"
 #include "float.h"
+#include "aggs.h"
 
 #define positions_lt(a, b) ((a) < (b))
 KSORT_INIT(sort_positions, int, positions_lt)
@@ -405,8 +406,8 @@ static inline void perform_doc_processing(struct squery *sq, struct docrank *ran
 
     // Handle aggregations
     // TODO: how do we handle partial scan ?? Force full scan if we have an agg?
-    if (sq->sqres->agg) {
-        sq->sqres->agg->consume(sq->sqres->agg, sq->q->in, rank->docid, pos);
+    if (sq->sqres->agg && !sq->fast_rank) {
+        sq->sqres->agg->consume(sq->sqres->agg, sq, rank->docid, pos);
     }
 }
 
@@ -439,6 +440,11 @@ static inline void perform_doc_rank(struct squery *sq, struct docrank *rank) {
     }
     // Perform further processing for facets / aggregations
     perform_doc_processing(sq, rank, mdata.mv_data);
+}
+
+static void calculate_agg(uint32_t val, void *rptr) {
+    struct squery *sq = rptr;
+    sq->sqres->agg->consume(sq->sqres->agg, sq, val, NULL);
 }
 
 static void setup_ranks(uint32_t val, void *rptr) {
@@ -544,6 +550,12 @@ static struct docrank *perform_fast_ranking(struct squery *sq, struct bmap *doci
     bmap_iterate(rmap, setup_skip_ranks, &riter);
     bmap_free(dbmap);
     *resultcount = (riter.rankpos - 1);
+
+    // If we have aggregates, do it on all documents
+    if (sq->sqres->agg) {
+        bmap_iterate(docid_map, calculate_agg, sq);
+    }
+
     return ranks;
 }
 
