@@ -109,6 +109,7 @@ static void si_write_start(struct sindex *si) {
     si->wc->kh_twid2widbmap = kh_init(WID2MBMAP);
     si->wc->kh_phrasebmap = kh_init(WID2MBMAP);
     si->wc->kh_idnum2dbl = kh_init(IDNUM2DBL);
+    si->wc->kh_id2data = kh_init(ID2DATA);
  
     // Setup per obj data
     struct doc_data *od = &si->wc->od;
@@ -175,7 +176,20 @@ static void store_idnum2dbl(struct sindex *si, uint64_t id, double *d) {
     key.mv_data = &id;
     int rc = mdb_put(si->txn, si->idnum2dbl_dbi, &key, &data, 0);
     if (rc != 0) {
-        M_ERR("MDB put failure facetid2str %s", mdb_strerror(rc));
+        M_ERR("MDB put failure idnum2dbl %s", mdb_strerror(rc));
+    } 
+}
+
+static void store_docid2data(struct sindex *si, uint32_t id, uint8_t *d, int len) {
+    MDB_val key, data;
+    data.mv_size = len;
+    data.mv_data = (void *)d;
+
+    key.mv_size = sizeof(uint32_t);
+    key.mv_data = &id;
+    int rc = mdb_put(si->txn, si->docid2data_dbi, &key, &data, 0);
+    if (rc != 0) {
+        M_ERR("MDB put failure docid2data %s", mdb_strerror(rc));
     } 
 }
 
@@ -239,6 +253,15 @@ static void si_write_end(struct sindex *si) {
     });
     kh_destroy(IDNUM2DBL, si->wc->kh_idnum2dbl);
 
+    uint32_t docgrp_id;
+    uint8_t *data;
+    kh_foreach(si->wc->kh_id2data, docgrp_id, data, {
+        uint32_t *len = (uint32_t *)data;
+        store_docid2data(si, docgrp_id, data, *len);
+        free(data);
+    });
+    kh_destroy(ID2DATA, si->wc->kh_id2data);
+
     dtrie_write_end(si->trie, si->boolid2bmap_dbi, si->txn);
     // Commit write transaction
     mdb_txn_commit(si->txn);
@@ -263,6 +286,69 @@ static inline void sindex_docdata_init(struct sindex *si) {
     }
 }
 
+static inline int get_datastore_header_len() {
+    return ((BLKSIZE * 2) + 1) * sizeof(uint32_t);
+}
+
+static uint8_t *get_datastore_location(struct sindex *si, uint32_t docid, int len) {
+    // See if aggregate data for this group already exists
+    int docpos = docid % BLKSIZE;
+    uint32_t docgrp_id = docid - docpos;
+    khash_t(ID2DATA) *kh = si->wc->kh_id2data;
+    khiter_t k = kh_get(ID2DATA, kh, docgrp_id);
+    uint8_t *dd;
+
+    if (k == kh_end(kh)) {
+        // We need to add the entry to be written
+        int ret = 0;
+        k = kh_put(ID2DATA, kh, docgrp_id, &ret);
+
+        // Check if it already exists in lmdb
+        MDB_val key, data;
+        key.mv_size = sizeof(uint32_t);
+        key.mv_data = (void *)&docgrp_id;
+
+        if (mdb_get(si->txn, si->docid2data_dbi, &key, &data) == 0) {
+            dd = malloc(data.mv_size);
+            memcpy(dd, data.mv_data, data.mv_size);
+            kh_value(kh, k) = dd;
+        } else {
+            int hlen = get_datastore_header_len();
+            dd = malloc(hlen + len);
+            uint32_t *size = (uint32_t *) dd;
+            memset(dd, 0, hlen + len);
+            *size = hlen + len;
+            uint32_t *offset = size + 1;
+            offset[docpos * 2] = hlen;
+            offset[(docpos * 2) + 1] = len;
+            kh_value(kh, k) = dd;
+            //printf("len %d docid %u returning here %d size %u:%d\n", len, docid, hlen, *size, hlen + len);
+            return &dd[hlen];
+        }
+    } else {
+        dd = kh_value(kh, k);
+    }
+    uint32_t *size = (uint32_t *)dd;
+    //printf("size is %u\n", *size);
+    uint32_t *offset = size + 1;
+    if (offset[docpos * 2] && (offset[(docpos * 2) + 1] > len)) {
+        //printf("len %d docid %u returning here1 %d\n",len, docid, offset[docpos * 2]);
+        return &dd[offset[docpos * 2]];
+    }
+    // TODO: Compact wasted space
+    dd = realloc(dd, *size + len);
+    size = (uint32_t *)dd;
+    memset(&dd[*size], 0, len);
+    offset = size + 1;
+    kh_value(kh, k) = dd;
+    offset[docpos * 2] = *size;
+    offset[(docpos * 2) + 1] = len;
+    dd += *size;
+    *size = *size + len;
+    //printf("len %d docid %u returning here2 %d %u\n", len, docid, *size - len, *size);
+    return dd;
+}
+
 /* Stores the per document numeric and facet data.
  * This is split from word position information as this will
  * mostly be used during large scale aggregations
@@ -280,6 +366,7 @@ static void store_docdata(struct sindex *si, struct doc_data *od, uint8_t *wpdat
     size = (size + 7) & ~7;
     size_t full_size = size + len;
 
+#if 0
     // Reserve space in lmdb to store this data
     MDB_val key,data;
     key.mv_size = sizeof(uint32_t);
@@ -291,8 +378,10 @@ static void store_docdata(struct sindex *si, struct doc_data *od, uint8_t *wpdat
         M_ERR("Failed to allocate data to store docid2fndata for docid %u", od->docid);
         return;
     }
+#endif
 
-    uint8_t *mpos = data.mv_data;
+    uint8_t *data_pos = get_datastore_location(si, od->docid, full_size);
+    uint8_t *mpos = data_pos;
     uint32_t *offset = (uint32_t *)mpos;
     *offset = size;  // Offset to skip numbers and facets and reach word pos data
     mpos += sizeof(uint32_t);
@@ -317,7 +406,7 @@ static void store_docdata(struct sindex *si, struct doc_data *od, uint8_t *wpdat
         pos += (f->count + 1);
     }
     // printf("diff is %lu size is %lu\n", (uint8_t *)pos - (uint8_t *)data.mv_data, size);
-    uint8_t *wpos = ((uint8_t *) data.mv_data) + size;
+    uint8_t *wpos = data_pos + size;
     memcpy(wpos, wpdata, len);
     //printf("Full size %lu reserved %lu", full_size, ((uint8_t *)wpos - (uint8_t *)data.mv_data) + len);
 }

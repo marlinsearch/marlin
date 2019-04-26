@@ -51,6 +51,7 @@ struct squery {
     struct squery_result *sqres;
     struct shard *shard;
     khash_t(IDNUM2DBL) *kh_idnum2dbl;   // IDNUM to double values
+    khash_t(ID2DATA) *kh_id2data;       // docgrp_id to data
     bool fast_rank;    // Did we do a partial scan for processing this query?
     int shard_idx;
     MDB_txn *txn;

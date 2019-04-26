@@ -490,6 +490,7 @@ void execute_squery(void *w) {
 
     trace_query("Applied filters in", &start);
     sq->kh_idnum2dbl = kh_init(IDNUM2DBL);
+    sq->kh_id2data = kh_init(ID2DATA);
     // Copy aggs if required
     if (sq->q->agg) {
         sq->sqres->agg = aggs_dup(sq->q->agg);
@@ -506,6 +507,7 @@ void execute_squery(void *w) {
 
     // Aggregation should be done by now, clear the cache
     kh_destroy(IDNUM2DBL, sq->kh_idnum2dbl);
+    kh_destroy(ID2DATA, sq->kh_id2data);
 
     // Sort facet results
     sq->sqres->fc = sort_facets(sq);

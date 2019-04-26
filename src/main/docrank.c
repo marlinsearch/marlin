@@ -411,13 +411,40 @@ static inline void perform_doc_processing(struct squery *sq, struct docrank *ran
     }
 }
 
+static inline void *get_doc_data(struct squery *sq, uint32_t docid) {
+    int docpos = docid % BLKSIZE;
+    uint32_t docgrp_id = docid - docpos;
+
+    khash_t(ID2DATA) *kh = sq->kh_id2data;
+    khiter_t k = kh_get(ID2DATA, kh, docgrp_id);
+    uint8_t *dd = NULL;
+
+    if (k == kh_end(kh)) {
+        // We need to add the entry to be written
+        int ret = 0;
+        k = kh_put(ID2DATA, kh, docgrp_id, &ret);
+        MDB_val key, data;
+        key.mv_size = sizeof(uint32_t);
+        key.mv_data = (void *)&docgrp_id;
+
+        if (mdb_get(sq->txn, sq->shard->sindex->docid2data_dbi, &key, &data) == 0) {
+            dd = data.mv_data;
+        }
+        kh_value(kh, k) = dd;
+    } else {
+        dd = kh_value(kh, k);
+    }
+    if (dd) {
+        uint32_t *size = (uint32_t *)dd;
+        uint32_t *offset = size + 1;
+        return &dd[offset[docpos * 2]];
+    }
+    return NULL;
+}
+
 static inline void perform_doc_rank(struct squery *sq, struct docrank *rank) {
-    MDB_val key, mdata;
-    key.mv_size = sizeof(uint32_t);
-    int rc;
-    key.mv_data = &rank->docid;
-    struct sindex *si = sq->shard->sindex;
-    if ((rc = mdb_get(sq->txn, si->docid2data_dbi, &key, &mdata)) != 0) {
+    uint8_t *data = get_doc_data(sq, rank->docid);
+    if (!data) {
         // Push this result down, we could not read this docdata from mdb
         M_ERR("Failed to read docdata for %u", rank->docid);
         rank->typos = 0xFF;
@@ -427,8 +454,8 @@ static inline void perform_doc_rank(struct squery *sq, struct docrank *rank) {
         return;
     }
     if ((sq->q->cfg.hits_per_page > 0) && (sq->q->num_words > 0)) {
-        uint32_t offset = *(uint32_t *)mdata.mv_data;
-        uint8_t *wpos = (uint8_t *)mdata.mv_data;
+        uint32_t offset = *(uint32_t *)data;
+        uint8_t *wpos = data;
         wpos += offset;
         calculate_rank(rank, sq, wpos);
     } else {
@@ -439,7 +466,7 @@ static inline void perform_doc_rank(struct squery *sq, struct docrank *rank) {
         rank->typos = 0;
     }
     // Perform further processing for facets / aggregations
-    perform_doc_processing(sq, rank, mdata.mv_data);
+    perform_doc_processing(sq, rank, data);
 }
 
 static void calculate_agg(uint32_t val, void *rptr) {

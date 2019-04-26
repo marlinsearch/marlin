@@ -44,6 +44,7 @@ struct write_cache {
     khash_t(WID2MBMAP) *kh_twid2widbmap;    // Top-level word id to wid bmap
     khash_t(WID2MBMAP) *kh_phrasebmap;      // Adjacent word id to docid bmap
     khash_t(IDNUM2DBL) *kh_idnum2dbl;       // IDNUM to double values
+    khash_t(ID2DATA)   *kh_id2data;         // Doc id to data
 
     // Per document index info
     struct doc_data od;

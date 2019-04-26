@@ -19,6 +19,7 @@
 #define MAPSIZE             PSIZE * PSIZE * 100
 #endif
 
+#define BLKSIZE  100
 #define IDPRIORITY(id, priority) ((uint64_t) id << 32 | priority << 16)
 #define IDPHRASE(id, id2) ((uint64_t) id << 32 | id2 << 12)
 #define IDNUM(id, priority) ((uint64_t) id << 32 | priority << 24)
@@ -139,6 +140,7 @@
 #define MAX_FIELD_NAME 256
 
 KHASH_MAP_INIT_INT64(IDNUM2DBL, double *) // Aggregation id num to double array
+KHASH_MAP_INIT_INT(ID2DATA, uint8_t *)  // Doc group id to data
 
 #endif
 
