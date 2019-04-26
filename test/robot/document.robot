@@ -106,6 +106,14 @@ Add document id1
     String      $.str               aaaa bbbb cccc
     Integer     $._docid            3
 
+Get stats
+    GET         /1/indexes/testindex/stats
+    Integer     response status     200
+
+Get info
+    GET         /1/indexes/testindex/info
+    Integer     response status     200
+
 Delete All docs
     Set Headers  ${appheader}
     DELETE      /1/indexes/testindex/id1

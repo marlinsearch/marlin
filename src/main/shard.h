@@ -24,6 +24,7 @@ char *shard_get_document(const struct shard *s, const char *id);
 bool shard_delete_document(struct shard *s, const struct json_t *j);
 bool shard_replace_document(struct shard *s, struct json_t *newj, const struct json_t *oldj);
 bool shard_update_document(struct shard *s, struct json_t *newj, struct json_t *oldj);
+void shard_update_stats(struct shard *s, struct json_t *result);
 struct bmap *shard_get_all_docids(struct shard *s);
 
 #endif
