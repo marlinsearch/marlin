@@ -63,6 +63,39 @@ static int double_compare(const MDB_val *a, const MDB_val *b) {
         *(double *)b->mv_data > *(double *)a->mv_data;
 }
 
+static void get_doc_stats(uint32_t docid, void *data) {
+    int rc;
+    struct sindex_stats *s = data;
+    MDB_val key, mdata;
+    key.mv_size = sizeof(uint32_t);
+    key.mv_data = &docid;
+    if ((rc = mdb_get(s->txn, s->si->docid2data_dbi, &key, &mdata)) == 0) {
+        uint32_t size = mdata.mv_size;
+        if (size > s->max) {
+            s->max = size;
+        }
+        if (size < s->min) {
+            s->min = size;
+        }
+        s->sum += size;
+    }
+}
+
+void sindex_update_stats(struct sindex *si, struct bmap *docids, json_t *result) {
+    struct sindex_stats stats;
+    stats.max = 0;
+    stats.min = 0xFFFFFFFF;
+    stats.sum = 0;
+    stats.si = si;
+    mdb_txn_begin(si->env, NULL, MDB_RDONLY, &stats.txn);
+    bmap_iterate(docids, get_doc_stats, &stats);
+    mdb_txn_abort(stats.txn);
+    json_object_set_new(result, J_MIN_DD, json_integer(stats.min));
+    json_object_set_new(result, J_MAX_DD, json_integer(stats.max));
+    json_object_set_new(result, J_SUM_DD, json_integer(stats.sum));
+    json_object_set_new(result, J_AVG_DD, json_real(stats.sum * 1.0/bmap_cardinality(docids)));
+}
+
 static void si_write_start(struct sindex *si) {
     // Prepares the write cache
     si->wc = calloc(1, sizeof(struct write_cache));

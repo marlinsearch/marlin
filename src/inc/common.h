@@ -83,6 +83,10 @@
 #define J_PERMISSIONS   "permissions"
 #define J_INDEXES       "indexes"
 #define J_DESCRIPTION   "description"
+#define J_MIN_DD        "minDocDataLength"
+#define J_SUM_DD        "sumDocDataLength"
+#define J_MAX_DD        "maxDocDataLength"
+#define J_AVG_DD        "avgDocDataLength"
 
 // API Settings fields
 #define J_S_INDEXFIELDS     "indexedFields"

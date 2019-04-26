@@ -322,6 +322,30 @@ static json_t *index_get_info_json(struct index *in) {
     return j;
 }
 
+static json_t *index_get_stats_json(struct index *in) {
+    json_t *j = json_object();
+    json_object_set_new(j, J_NAME, json_string(in->name));
+    json_object_set_new(j, J_NUM_JOBS, json_integer(in->job_count));
+    json_t *ja = json_array();
+    size_t total_docs = 0;
+    for (int i = 0; i < in->num_shards; i++) {
+        struct shard *s = kv_A(in->shards, i);
+        json_t *js = json_object();
+        size_t shard_docs = bmap_cardinality(s->sdata->used_bmap);
+        char shard_name[32];
+        snprintf(shard_name, sizeof(shard_name), "shard-%d", i);
+        json_object_set_new(js, J_NAME, json_string(shard_name));
+        json_object_set_new(js, J_NUM_DOCS, json_integer(shard_docs));
+        total_docs += shard_docs;
+        shard_update_stats(s, js);
+        json_array_append_new(ja, js);
+    }
+    json_object_set_new(j, J_NUM_DOCS, json_integer(total_docs));
+    json_object_set_new(j, J_NUM_SHARDS, json_integer(in->num_shards));
+    json_object_set_new(j, J_SHARDS, ja);
+    return j;
+}
+
 static int cfg_set_list_fields(void *data, json_t *ja) {
     size_t index;
     json_t *value;
@@ -822,6 +846,14 @@ static char *index_info_callback(h2o_req_t *req, void *data) {
     return response;
 }
 
+static char *index_stats_callback(h2o_req_t *req, void *data) {
+    struct index *in = data;
+    json_t *j = index_get_stats_json(in);
+    char *response = json_dumps(j, JSON_PRESERVE_ORDER|JSON_INDENT(4));
+    json_decref(j);
+    return response;
+}
+
 static char *index_mapping_callback(h2o_req_t *req, void *data) {
     struct index *in = data;
     char *response = mapping_to_json_str(in->mapping);
@@ -1187,6 +1219,8 @@ const struct api_path apipaths[] = {
     {"POST", NULL, KA_ADD, index_data_callback},
     // Index info
     {"GET", URL_INFO, KA_QUERY|KA_BROWSE, index_info_callback},
+    // Index statistics
+    {"GET", URL_STATS, KA_QUERY|KA_BROWSE, index_stats_callback},
     // Mapping
     {"GET", URL_MAPPING, KA_G_CONFIG, index_mapping_callback},
     // Delete index

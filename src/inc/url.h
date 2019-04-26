@@ -12,6 +12,7 @@
 #define URL_MAPPING     "mapping"
 #define URL_CLEAR       "clear"
 #define URL_QUERY       "query"
+#define URL_STATS       "stats"
 #define URL_MULTI       "*"
 
 #endif

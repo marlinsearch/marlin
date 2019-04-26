@@ -98,6 +98,14 @@ typedef struct __attribute__((__packed__)) wid_info {
     uint32_t offset:23;     // Offset to frequency and positions or the actual position
 } wid_info_t;
 
+struct sindex_stats {
+    uint32_t min;
+    uint32_t max;
+    uint64_t sum;
+    MDB_txn *txn;
+    struct sindex *si;
+};
+
 struct sindex *sindex_new(struct shard *s);
 void sindex_add_documents(struct sindex *si, json_t *j);
 void sindex_free(struct sindex *si);
@@ -107,6 +115,7 @@ void sindex_set_mapping(struct sindex *si, const struct mapping *map);
 void sindex_delete_document(struct sindex *si, const json_t *j, uint32_t docid);
 uint8_t *read_vint(uint8_t *buf, int *value);
 char *sindex_lookup_facet(struct sindex *si, uint32_t facet_id);
+void sindex_update_stats(struct sindex *si, struct bmap *docids, json_t *result);
 
 #endif
 
