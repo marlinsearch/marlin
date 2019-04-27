@@ -13,6 +13,9 @@ static struct char_se *char_se_dup(const struct char_se *cse) {
 }
 
 static void new_token(word_t *word, void *sep, void *data) {
+    // We only care about tokens which have atleast 1 char
+    if (word->length == 0) return;
+
     kvec_t(struct token *) *tokens = data;
     kvec_t(struct char_se *) *se = sep;
     struct token *t = calloc(1, sizeof(struct token));
@@ -223,6 +226,7 @@ char *highlight(const char *str, struct query *q, int snip_num_words) {
 #if 0
     printf("\n\nNum Tokens %lu len %lu\n", kv_size(tokens), strlen(str));
     for (int i = 0; i < kv_size(tokens); i++) {
+        printf("Token %d\n", i);
         dump_token(kv_A(tokens, i));
     }
 #endif
@@ -242,7 +246,6 @@ char *highlight(const char *str, struct query *q, int snip_num_words) {
 
         struct token *t = kv_A(tokens, i);
         // Make sure we are not overlapping
-        // NOTE: Crash here.. debug // CRASH : TODO
         if (kv_A(t->se, 0)->start < last_match_end) continue;
 
         // Find a match by looking at all terms
