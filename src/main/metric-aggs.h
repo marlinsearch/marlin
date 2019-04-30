@@ -1,16 +1,9 @@
 #ifndef __METRICS_AGGS_H__
 #define __METRICS_AGGS_H__
+
 #include "common.h"
 #include "index.h"
 #include "aggs.h"
-
-#define JA_FIELD    "field"
-#define JA_VALUE    "value"
-#define JA_SUM      "sum"
-#define JA_AVG      "avg"
-#define JA_MIN      "min"
-#define JA_MAX      "max"
-#define JA_COUNT    "count"
 
 struct agg_max {
     struct agg a;
@@ -18,7 +11,7 @@ struct agg_max {
     double value;
 };
 
-struct agg_min{
+struct agg_min {
     struct agg a;
     int min_field;
     double value;

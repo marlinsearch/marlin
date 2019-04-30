@@ -4,6 +4,14 @@
 #include "common.h"
 #include "squery.h"
 
+#define JA_FIELD    "field"
+#define JA_VALUE    "value"
+#define JA_SUM      "sum"
+#define JA_AVG      "avg"
+#define JA_MIN      "min"
+#define JA_MAX      "max"
+#define JA_COUNT    "count"
+
 typedef enum agg_type {
     AGG_ROOT,
     AGG_MAX,

@@ -316,7 +316,7 @@ void bmap_and_inplace(struct bmap *a, const struct bmap *b) {
 
     if (pos1 < a->num_c) {
         for (int i=pos1; i<a->num_c; i++) {
-            free(a->c[pos1].buffer);
+            free(a->c[i].buffer);
         }
         a->num_c = pos1;
     }
