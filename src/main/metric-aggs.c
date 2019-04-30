@@ -122,13 +122,13 @@ static double get_num_value(struct squery *sq, uint32_t docid, void *data, int p
             k = kh_put(IDNUM2DBL, kh, docgrp_id, &ret);
 
             // Check if it already exists in lmdb
-            MDB_val key, data;
+            MDB_val key, mdata;
             key.mv_size = sizeof(uint64_t);
             key.mv_data = (void *)&docgrp_id;
             // If it already exists, we need not write so set a NULL value to 
             // avoid looking up mdb everytime we encounter this facetid
-            if (mdb_get(sq->txn, sq->shard->sindex->idnum2dbl_dbi, &key, &data) == 0) {
-                grpd = data.mv_data;
+            if (mdb_get(sq->txn, sq->shard->sindex->idnum2dbl_dbi, &key, &mdata) == 0) {
+                grpd = mdata.mv_data;
             }
             kh_value(kh, k) = grpd;
         } else {
