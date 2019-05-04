@@ -1,5 +1,6 @@
 #include "aggs.h"
 #include "metric-aggs.h"
+#include "static-bkt-aggs.h"
 
 struct agg_info {
     const char *agg_name;
@@ -104,6 +105,8 @@ const struct agg_info aggs[] = {
     {"stats", parse_stats_agg},
     // Cardinality - metric aggregation
     {"cardinality", parse_card_agg},
+    // Range - static bucket aggregation
+    {"range", parse_range_agg},
     {NULL, NULL}
 };
 
@@ -134,6 +137,12 @@ struct agg *detect_and_parse(const char *name, json_t *j, struct index *in) {
     // Handle nested aggregation of bucket aggregations
     if (agg && agg->kind == AGGK_BUCKET) {
         agg->naggs = nagg;
+        // For static bucket aggregations, we can set the nested
+        // aggregations right away
+        for (int i = 0; i < kv_size(agg->bkts); i++) {
+            struct bkt *b = kv_A(agg->bkts, i);
+            b->aggs = aggs_dup(nagg);
+        }
     }
 
     return agg;

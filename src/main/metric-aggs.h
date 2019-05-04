@@ -7,26 +7,22 @@
 
 struct agg_max {
     struct agg a;
-    int max_field;
     double value;
 };
 
 struct agg_min {
     struct agg a;
-    int min_field;
     double value;
 };
 
 struct agg_avg {
     struct agg a;
-    int field;
     double sum;
     int count;
 };
 
 struct agg_stats {
     struct agg a;
-    int field;
     double sum;
     double min;
     double max;
@@ -35,7 +31,6 @@ struct agg_stats {
 
 struct agg_card {
     struct agg a;
-    int field;
     struct bmap *bmap;
     struct oper *oper;
     uint32_t count;

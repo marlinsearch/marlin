@@ -32,7 +32,7 @@ static void consume_card_agg(struct agg *a, struct squery *sq, uint32_t docid, v
     for (int i = 0; i < m->num_facets; i++) {
         facets_t *f = (facets_t *)fpos;
         // If facet is enabled, count it
-        if (i == ac->field) {
+        if (i == a->field) {
             for (int j = 0; j < f->count; j++) {
                 bmap_add(ac->bmap, f->data[j]);
             }
@@ -86,7 +86,7 @@ struct agg *parse_card_agg(const char *name, json_t *j, struct index *in) {
         if (field) {
             struct schema *s = get_field_schema(in, field);
             if (s && s->is_facet) {
-                card->field = s->f_priority;
+                a->field = s->f_priority;
                 a->consume = consume_card_agg;
                 a->as_json = card_agg_as_json;
                 a->dup = card_agg_dup;
@@ -145,7 +145,7 @@ static double get_num_value(struct squery *sq, uint32_t docid, void *data, int p
 /************ STATS METRICS AGGREGATION ************/
 static void consume_stats_agg(struct agg *a, struct squery *sq, uint32_t docid, void *data) {
     struct agg_stats *am = (struct agg_stats *)a;
-    double val = get_num_value(sq, docid, data, am->field);
+    double val = get_num_value(sq, docid, data, a->field);
     if (val != -DBL_MAX) {
         am->sum += val;
         if (val < am->min) {
@@ -201,7 +201,7 @@ struct agg *parse_stats_agg(const char *name, json_t *j, struct index *in) {
         if (field) {
             struct schema *s = get_field_schema(in, field);
             if (s && s->is_indexed && (s->type == F_NUMBER || s->type == F_NUMLIST)) {
-                stats->field = s->i_priority;
+                a->field = s->i_priority;
                 stats->min = DBL_MAX;
                 stats->max = -DBL_MAX;
                 a->consume = consume_stats_agg;
@@ -222,7 +222,7 @@ struct agg *parse_stats_agg(const char *name, json_t *j, struct index *in) {
 /************ AVG METRICS AGGREGATION ************/
 static void consume_avg_agg(struct agg *a, struct squery *sq, uint32_t docid, void *data) {
     struct agg_avg *am = (struct agg_avg *)a;
-    double val = get_num_value(sq, docid, data, am->field);
+    double val = get_num_value(sq, docid, data, a->field);
     if (val != -DBL_MAX) {
         am->sum += val;
         am->count++;
@@ -262,7 +262,7 @@ struct agg *parse_avg_agg(const char *name, json_t *j, struct index *in) {
         if (field) {
             struct schema *s = get_field_schema(in, field);
             if (s && s->is_indexed && (s->type == F_NUMBER || s->type == F_NUMLIST)) {
-                avg->field = s->i_priority;
+                a->field = s->i_priority;
                 a->consume = consume_avg_agg;
                 a->as_json = avg_agg_as_json;
                 a->dup = avg_agg_dup;
@@ -280,7 +280,7 @@ struct agg *parse_avg_agg(const char *name, json_t *j, struct index *in) {
 /************ MAX METRICS AGGREGATION ************/
 static void consume_max_agg(struct agg *a, struct squery *sq, uint32_t docid, void *data) {
     struct agg_max *am = (struct agg_max *)a;
-    double val = get_num_value(sq, docid, data, am->max_field);
+    double val = get_num_value(sq, docid, data, a->field);
     if (val != -DBL_MAX) {
         if (val > am->value) {
             am->value = val;
@@ -322,7 +322,7 @@ struct agg *parse_max_agg(const char *name, json_t *j, struct index *in) {
         if (field) {
             struct schema *s = get_field_schema(in, field);
             if (s && s->is_indexed && (s->type == F_NUMBER || s->type == F_NUMLIST)) {
-                max->max_field = s->i_priority;
+                a->field = s->i_priority;
                 max->value = -DBL_MAX;
                 a->consume = consume_max_agg;
                 a->as_json = max_agg_as_json;
@@ -341,7 +341,7 @@ struct agg *parse_max_agg(const char *name, json_t *j, struct index *in) {
 /************ MIN METRICS AGGREGATION ************/
 static void consume_min_agg(struct agg *a, struct squery *sq, uint32_t docid, void *data) {
     struct agg_min *am = (struct agg_min *)a;
-    double val = get_num_value(sq, docid, data, am->min_field);
+    double val = get_num_value(sq, docid, data, a->field);
     if (val != -DBL_MAX) {
         if (val < am->value) {
             am->value = val;
@@ -383,7 +383,7 @@ struct agg *parse_min_agg(const char *name, json_t *j, struct index *in) {
         if (field) {
             struct schema *s = get_field_schema(in, field);
             if (s && s->is_indexed && (s->type == F_NUMBER || s->type == F_NUMLIST)) {
-                min->min_field = s->i_priority;
+                a->field = s->i_priority;
                 min->value = DBL_MAX;
                 a->consume = consume_min_agg;
                 a->as_json = min_agg_as_json;
