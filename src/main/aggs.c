@@ -1,6 +1,6 @@
 #include "aggs.h"
-#include "metric-aggs.h"
-#include "static-bkt-aggs.h"
+#include "metric_aggs.h"
+#include "static_bkt_aggs.h"
 
 struct agg_info {
     const char *agg_name;

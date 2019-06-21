@@ -13,6 +13,9 @@
 #define JA_COUNT    "count"
 #define JA_RANGE    "range"
 #define JA_RANGES   "ranges"
+#define JA_FROM     "from"
+#define JA_TO       "to"
+#define JA_KEY      "key"
 
 typedef enum agg_type {
     AGG_ROOT,
