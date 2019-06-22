@@ -62,12 +62,11 @@ static inline int bmap_advance(const struct bmap *b, uint16_t id, int pos) {
 }
 
 static inline int bmap_advance_free(struct bmap *b, uint16_t id, int pos) {
-    while(++pos < b->num_c) {
+    while(pos < b->num_c) {
         if (b->c[pos].buffer[ID] >= id) {
             return pos;
         } else {
             bmap_cont_remove(b, pos);
-            pos--;
         }
     }
     return pos;
@@ -295,11 +294,11 @@ void bmap_and_inplace(struct bmap *a, const struct bmap *b) {
     while(pos1 < length1 && pos2 < length2) {
         const uint16_t id1 = a->c[pos1].buffer[0];
         const uint16_t id2 = b->c[pos2].buffer[0];
-        // printf("id2 %d id2 %d\n", id1, id2);
+        // printf("id2 %d id2 %d pos1 %d pos2 %d\n", id1, id2, pos1, pos2);
         if (id1 == id2) {
             cont_inplace_and(&a->c[pos1], &b->c[pos2]);
-            // printf("card1 %d card2 %d card3 %d\n", get_cont_cardinality(&a->c[pos1]), get_cont_cardinality(&b->c[pos2]), get_cont_cardinality(c));
-            // printf("a bitset %d b bitset %d \n", a->is_bitset, b->is_bitset);
+            //printf("card1 %d card2 %d card3 %d\n", get_cont_cardinality(&a->c[pos1]), get_cont_cardinality(&b->c[pos2]), get_cont_cardinality(c));
+            //printf("a bitset %d b bitset %d \n", a->is_bitset, b->is_bitset);
             if (cont_cardinality(&a->c[pos1]) == 0) {
                 bmap_cont_remove(a, pos1);
                 length1--;
@@ -309,8 +308,11 @@ void bmap_and_inplace(struct bmap *a, const struct bmap *b) {
             ++pos2;
         } else if (id1 < id2) {
             pos1 = bmap_advance_free(a, id2, pos1);
+            length1 = a->num_c;
+            // printf("advance free till id %d pos1 is %d\n", id2, pos1);
         } else {
             pos2 = bmap_advance(b, id1, pos2);
+            // printf("advance till id %d pos2 is %d\n", id1, pos2);
         }
     }
 
