@@ -282,7 +282,7 @@ char *highlight(const char *str, struct query *q, int snip_num_words) {
     char *resp = NULL;
     if (last_match_end == 0) goto free_tokens;
 
-    int tlen = strlen(str) + (num_matches * strlen("<em> </em>"));
+    int tlen = strlen(str) + (num_matches * strlen("<mark> </mark>"));
 
     resp = malloc(tlen);
     int pos = 0;
@@ -309,16 +309,16 @@ char *highlight(const char *str, struct query *q, int snip_num_words) {
             memcpy(&resp[pos], &str[start], c->start - start);
             pos += (c->start - start);
             // Copy start
-            memcpy(&resp[pos], "<em>", strlen("<em>"));
-            pos += strlen("<em>");
+            memcpy(&resp[pos], "<mark>", strlen("<mark>"));
+            pos += strlen("<mark>");
             struct char_se *c2 = kv_A(t->se, t->match_len - 1);
             // Copy matching content
             memcpy(&resp[pos], &str[c->start], c2->end - c->start);
             pos += c2->end - c->start;
             start = c2->end;
             // copy end
-            memcpy(&resp[pos], "</em>", strlen("</em>"));
-            pos += strlen("</em>");
+            memcpy(&resp[pos], "</mark>", strlen("</mark>"));
+            pos += strlen("</mark>");
         }
 
         if (i == num_tokens - 1) {
