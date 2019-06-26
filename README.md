@@ -6,6 +6,11 @@
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/marlinsearch/marlin.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/marlinsearch/marlin/alerts/)
 
 # MARLIN SEARCH
+
+A few demos are available on https://demo.marlinsearch.com
+
+## Build instructions
+
 make deps to build all dependencies
 
 make to build
