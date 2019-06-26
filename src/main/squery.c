@@ -252,10 +252,12 @@ static struct bmap *get_matching_docids(struct squery *sq) {
     struct oper *o = oper_new();
     for (int i = 0; i < num_terms; i += 2) {
         struct bmap *b = get_term_docids(sqres, i, num_terms);
+        // printf("BMAP length here is %d\n", bmap_cardinality(b));
         oper_add(o, b);
     }
     // We have been matching data until now
     ret = oper_and(o);
+    // printf("BMAP total len here is %d\n", bmap_cardinality(ret));
     oper_total_free(o);
 
 last_term:

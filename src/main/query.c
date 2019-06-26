@@ -299,14 +299,13 @@ static struct json_t *hit_query_processing(struct json_t *hit, struct query *q) 
         json_decref(hit);
     }
 
-    if (q->cfg.highlight_fields && q->num_words) {
-        // We highlight all fields, this is '*' / default setting
-        if (q->cfg.highlight_fields->name[0] == '\0') {
-            new_hit = highlight_all_fields(new_hit, q);
-        } else {
-            new_hit = highlight_some_fields(new_hit, q);
-        }
+    // We highlight all fields, this is '*' / default setting
+    if (q->cfg.highlight_fields->name[0] == '\0') {
+        new_hit = highlight_all_fields(new_hit, q);
+    } else {
+        new_hit = highlight_some_fields(new_hit, q);
     }
+
     return new_hit;
 }
 

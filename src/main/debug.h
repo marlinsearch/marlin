@@ -4,7 +4,7 @@
 #include "query.h"
 #include "dtrie.h"
 
-//#define DUMP_ENABLE 1
+// #define DUMP_ENABLE 1
 #define TRACE_QUERY 1
 
 #ifdef DUMP_ENABLE
