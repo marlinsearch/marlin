@@ -10,12 +10,13 @@
 #define JA_AVG      "avg"
 #define JA_MIN      "min"
 #define JA_MAX      "max"
-#define JA_COUNT    "count"
+#define JA_COUNT    "doc_count"
 #define JA_RANGE    "range"
 #define JA_RANGES   "ranges"
 #define JA_FROM     "from"
 #define JA_TO       "to"
 #define JA_KEY      "key"
+#define JA_BKTS     "buckets"
 
 typedef enum agg_type {
     AGG_ROOT,
@@ -27,6 +28,8 @@ typedef enum agg_type {
     AGG_CARDINALITY,
     // Bucket
     AGG_RANGE,
+
+    // Error
     AGG_ERROR
 } AGG_TYPE;
 
@@ -40,13 +43,12 @@ typedef enum agg_kind {
 /* Buckets for bucket aggregations */
 struct bkt;
 
-typedef void (*consume_b) (struct bkt *b, struct squery *sq, uint32_t docid, void *data, double v);
+typedef void (*consume_b) (struct bkt *b, struct squery *sq, uint32_t docid, void *data);
 typedef json_t *(*as_json_b) (struct bkt *b);
 
 struct bkt {
     char key[MAX_FIELD_NAME];
     uint32_t count;
-    int field;
     consume_b consume;
     as_json_b as_json;
     struct agg *aggs;

@@ -7,6 +7,10 @@ ${index}  {"name" : "testindex", "numShards": 5}
 
 
 *** Test Cases ***
+Delete the initial application
+    Set Headers  ${header}
+    DELETE      /1/applications/appfortests
+
 Create a new application
     Set Headers  ${header}
     POST         /1/applications    ${app}
@@ -65,7 +69,7 @@ Test avg aggr
 Test stats aggr
     POST         /1/indexes/testindex/query  {"aggs": {"stats": {"stats": {"field": "n"}}}}
     Number       $.aggs.stats.avg       4.6
-    Number       $.aggs.stats.count     5
+    Number       $.aggs.stats.doc_count     5
     Integer      $.aggs.stats.min       1
     Integer      $.aggs.stats.max       11
     Integer      $.aggs.stats.sum       23
@@ -83,6 +87,12 @@ Test card aggr
     Integer     $.aggs.card.value   4
     POST         /1/indexes/testindex/query  {"aggs": {"card": {"cardinality": {"field": "nl"}}}}
     Integer     $.aggs.card.value   7
+
+Test range bkt aggr
+    POST         /1/indexes/testindex/query  {"aggs": {"ranges": {"range": {"field": "n", "ranges": [{"to": 3}, {"from": 3, "to": 5}, {"from": 5}]}}}}
+    Output
+    POST         /1/indexes/testindex/query  {"aggs": {"ranges": {"range": {"field": "n", "ranges": [{"to": 6}, {"from": 6}]}}}}
+    Output
 
 Delete the index
     Set Headers  ${appheader}

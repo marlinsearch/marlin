@@ -1,19 +1,69 @@
 #include "static_bkt_aggs.h"
+#include "aggs_common.h"
 #include <float.h>
 
-static void static_bkt_agg_free(struct agg *f) {
-    free(f);
+static void static_bkt_agg_free(struct agg *a) {
+    for (int i = 0; i < kv_size(a->children); i++) {
+        struct agg *c = kv_A(a->children, i);
+        c->free(c);
+    }
+    kv_destroy(a->children);
+
+    for (int i = 0; i < kv_size(a->bkts); i++) {
+        struct bkt *b = kv_A(a->bkts, i);
+        if (b->aggs) {
+            b->aggs->free(b->aggs);
+        }
+        free(b);
+    }
+    kv_destroy(a->bkts);
+    free(a);
 }
 
-
 static void consume_range_agg(struct agg *a, struct squery *sq, uint32_t docid, void *data) {
+    printf("consuming range agg \n");
+    double val = get_agg_num_value(sq, docid, data, a->field);
+    // Iterate all buckets and consume if its within range
+    for (int i = 0; i < kv_size(a->bkts); i++) {
+        struct range_bkt *rb = (struct range_bkt *)kv_A(a->bkts, i);
+        if (val >= rb->from && val < rb->to) {
+            rb->b.count++;
+        }
+    }
 }
 
 static json_t *range_agg_as_json(struct agg *a) {
-    return NULL;
+    json_t *j = json_object();
+    json_t *ja = json_array();
+
+    int nbkts = kv_size(a->bkts);
+    for (int i = 0; i < nbkts; i++) {
+        struct range_bkt *rb = (struct range_bkt *)kv_A(a->bkts, i);
+        json_t *jb = json_object();
+        json_object_set_new(jb, JA_KEY, json_string(rb->b.key));
+        json_object_set_new(jb, JA_COUNT, json_integer(rb->b.count));
+        if (rb->from != -DBL_MAX) {
+            json_object_set_new(jb, JA_FROM, json_real(rb->from));
+        }
+        if (rb->to != DBL_MAX) {
+            json_object_set_new(jb, JA_TO, json_real(rb->to));
+        }
+        json_array_append_new(ja, jb);
+    }
+
+    json_object_set_new(j, JA_BKTS, ja);
+    return j;
 }
 
 static void range_agg_merge(struct agg *into, const struct agg *from) {
+    int nbkts = kv_size(into->bkts);
+
+    for (int i = 0; i < nbkts; i++) {
+        struct range_bkt *ri = (struct range_bkt *)kv_A(into->bkts, i);
+        struct range_bkt *rf = (struct range_bkt *)kv_A(from->bkts, i);
+        ri->b.count += rf->b.count;
+        // TODO: merge nested aggs
+    }
 }
 
 static bool parse_range_bkt(struct json_t *jb, struct agg *a) {
@@ -46,9 +96,45 @@ static bool parse_range_bkt(struct json_t *jb, struct agg *a) {
         return false;
     }
 
+    // Set key if not present *-100.0 or 100.0-200.0 or 200-*
+    if (bkt->b.key[0] == '\0') {
+        char temp[128];
+        if (bkt->from != -DBL_MAX) {
+            snprintf(temp, sizeof(temp), "%f-", bkt->from);
+        } else {
+            strcpy(temp, "*-");
+        }
+        snprintf(bkt->b.key, sizeof(bkt->b.key), "%s", temp);
+        if (bkt->to != DBL_MAX) {
+            snprintf(temp, sizeof(temp), "%f", bkt->to);
+        } else {
+            strcpy(temp, "*");
+        }
+        strcat(bkt->b.key, temp);
+    }
+
     kv_push(struct bkt *, a->bkts, (struct bkt *)bkt);
     return true;
 }
+
+static struct agg *range_agg_dup(const struct agg *a) {
+    struct agg *r = malloc(sizeof(struct agg));
+    memcpy(r, a, sizeof(struct agg));
+    kv_init(r->children);
+    for (int i = 0; i < kv_size(a->children); i++) {
+        struct agg *c = kv_A(a->children, i);
+        kv_push(struct agg *, r->children, c->dup(c));
+    }
+    kv_init(r->bkts);
+    for (int i = 0; i < kv_size(a->bkts); i++) {
+        struct range_bkt *rb = (struct range_bkt *)kv_A(a->bkts, i);
+        struct range_bkt *nrb = malloc(sizeof(struct range_bkt));
+        memcpy(nrb, rb, sizeof(struct range_bkt));
+        kv_push(struct bkt *, r->bkts, (struct bkt *)nrb);
+    }
+    return r;
+}
+
 
 struct agg *parse_range_agg(const char *name, json_t *j, struct index *in) {
     struct agg *a = calloc(1, sizeof(struct agg));
@@ -67,7 +153,7 @@ struct agg *parse_range_agg(const char *name, json_t *j, struct index *in) {
                 a->field = s->i_priority;
                 a->consume = consume_range_agg;
                 a->as_json = range_agg_as_json;
-                a->dup = aggs_dup;
+                a->dup = range_agg_dup;
                 a->merge = range_agg_merge;
                 valid = true;
             }

@@ -9,7 +9,7 @@
 #include "mlog.h"
 #include "khash.h"
 
-//#define VALGRIND_TEST 1
+#define VALGRIND_TEST 1
 
 #if VALGRIND_TEST
 #define MDB_ENV_SIZE        655360000

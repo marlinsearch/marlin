@@ -141,7 +141,9 @@ struct agg *detect_and_parse(const char *name, json_t *j, struct index *in) {
         // aggregations right away
         for (int i = 0; i < kv_size(agg->bkts); i++) {
             struct bkt *b = kv_A(agg->bkts, i);
-            b->aggs = aggs_dup(nagg);
+            if (nagg) {
+                b->aggs = aggs_dup(nagg);
+            }
         }
     }
 
