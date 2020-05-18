@@ -116,6 +116,7 @@ void shard_update_stats(struct shard *s, struct json_t *result) {
     struct bmap *docids = shard_get_all_docids(s);
     sindex_update_stats(s->sindex, docids, result);
     // TODO: Get data stats too
+    bmap_free(docids);
 }
 
 bool shard_replace_document(struct shard *s, struct json_t *newj, const struct json_t *oldj) {

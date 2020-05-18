@@ -5,7 +5,7 @@
 #include "dtrie.h"
 
 // #define DUMP_ENABLE 1
-#define TRACE_QUERY 1
+// #define TRACE_QUERY 1
 
 #ifdef DUMP_ENABLE
 void worddump(const word_t *a);

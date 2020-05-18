@@ -159,7 +159,7 @@ static void lookup_terms(struct squery *sq, struct sindex *si) {
     for (int i = 0; i < sq->q->num_words; i++) {
         uint32_t wid = dtrie_lookup_exact(si->trie, kv_A(sq->q->words,i));
         if (wid) {
-            M_INFO("Exact wid is %u", wid);
+            M_DBG("Exact wid is %u", wid);
             // TODO: Handle field restricted queries
             sqres->exact_docid_map[i] = mbmap_load_bmap(sq->txn, si->wid2bmap_dbi, IDPRIORITY(wid, 0));
         }

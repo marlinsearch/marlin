@@ -29,7 +29,6 @@ Load some data
     Wait Until Keyword Succeeds	100x	10ms   No Jobs
 
 Test an empty query
-    ${testjson}  Input  ${CURDIR}/../test.json
     Set Headers  ${appheader}
     POST         /1/indexes/testindex/query  {"q": ""}
     Integer     response status     200
@@ -46,11 +45,20 @@ Get settings the index
     Integer     response status     200
 
 Test another empty query
-    ${testjson}  Input  ${CURDIR}/../test.json
     Set Headers  ${appheader}
     POST         /1/indexes/testindex/query  {"q": ""}
     Integer     response status     200
     Integer     $.totalHits         6000
+    String      $.indexName         testindex
+
+Test multiple queries
+    Set Headers  ${appheader}
+    POST         /1/indexes/testindex/query  {"requests" : [{"q": ""}, {"q": "blahblahblahblahblahblahblahblah"}]}
+    Integer     response status     200
+    Integer     $.results[0].totalHits         6000
+    Integer     $.results[1].totalHits         0
+    String      $.results[1].indexName         testindex
+    String      $.results[0].indexName         testindex
 
 Delete the index
     Set Headers  ${appheader}

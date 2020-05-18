@@ -140,8 +140,12 @@ static inline int bitset_bitset_and_cardinality(const struct cont *a, const stru
     return card;
 }
 
+static inline int header_and_cardinality_size(int cardinality) {
+    return cardinality ? cardinality + 2 : 3;
+}
+
 void bitset_cont_to_array(struct cont *c) {
-    uint16_t *nb = malloc((2 + cont_cardinality(c)) * sizeof(uint16_t));
+    uint16_t *nb = malloc((header_and_cardinality_size(cont_cardinality(c))) * sizeof(uint16_t));
     int p = 2;
     uint32_t base = c->buffer[ID] << 16;
     const uint64_t *buffer = (const uint64_t *)&c->buffer[2];
@@ -157,6 +161,9 @@ void bitset_cont_to_array(struct cont *c) {
     }
     nb[ID] = c->buffer[ID];
     nb[CARDINALITY] = c->buffer[CARDINALITY];
+    if (nb[CARDINALITY] == 0) {
+        nb[CARDINALITY + 1] = 0;
+    }
     free(c->buffer);
     c->buffer = nb;
 }
@@ -196,7 +203,7 @@ static struct cont *bitset_bitset_and(const struct cont *a, const struct cont *b
             cl[i+1] = (al[i+1] & bl[i+1]);
         }
     } else {
-        c->buffer = malloc((cardinality+2) * sizeof(uint16_t));
+        c->buffer = malloc(header_and_cardinality_size(cardinality) * sizeof(uint16_t));
         int pos = 2;
         int base = 0;
         for (int i=0; i<BCUTOFF; i++) {
@@ -213,6 +220,9 @@ static struct cont *bitset_bitset_and(const struct cont *a, const struct cont *b
 
     c->buffer[ID] = a->buffer[ID];
     c->buffer[CARDINALITY] = cardinality;
+    if (cardinality == 0) {
+        c->buffer[CARDINALITY + 1] = 0;
+    }
     return c;
 }
 
@@ -323,7 +333,7 @@ static struct cont *bitset_array_andnot(const struct cont *a, const struct cont 
 
 static struct cont *array_bitset_andnot(const struct cont *a, const struct cont *b) {
     struct cont *c = malloc(sizeof(struct cont));
-    c->buffer = malloc(sizeof(uint16_t) * (2 + (cont_cardinality(a) ? cont_cardinality(a) : 1)));
+    c->buffer = malloc(sizeof(uint16_t) * header_and_cardinality_size(cont_cardinality(a)));
     c->buffer[ID] = a->buffer[ID];
     c->buffer[CARDINALITY + 1] = 0;
 
@@ -344,7 +354,7 @@ static struct cont *bitset_array_and(const struct cont *a, const struct cont *b)
     if (!c) {
         return NULL;
     }
-    c->buffer = malloc(sizeof(uint16_t) * (2 + (a->buffer[CARDINALITY] ? a->buffer[CARDINALITY]: 1)));
+    c->buffer = malloc(sizeof(uint16_t) * header_and_cardinality_size(a->buffer[CARDINALITY]));
     if (!c->buffer) {
         free(c);
         return NULL;
@@ -465,7 +475,7 @@ static int array_array_and_cardinality(const struct cont *a, const struct cont *
 uint16_t *cont_duplicate(const struct cont *c) {
     uint16_t *buffer;
     if (cont_is_array(c)) {
-        int len = (2 + c->buffer[CARDINALITY]) * sizeof(uint16_t);
+        int len = header_and_cardinality_size(c->buffer[CARDINALITY]) * sizeof(uint16_t);
         buffer = malloc(len);
         memcpy(buffer, c->buffer, len);
     } else {
@@ -554,14 +564,14 @@ void cont_add(struct cont *c, const uint16_t item) {
 }
 
 bool cont_init(struct cont *c, const uint16_t id) {
-    c->buffer = malloc(sizeof(uint16_t) * 3);
+    c->buffer = malloc(sizeof(uint16_t) * header_and_cardinality_size(0));
     if (UNLIKELY(!c->buffer)) {
         printf("Malloc failure !\n");
         return false;
     }
     c->buffer[ID] = id;
     c->buffer[CARDINALITY] = 0;
-    c->buffer[2] = 0;
+    c->buffer[CARDINALITY+1] = 0;
     return true;
 }
 

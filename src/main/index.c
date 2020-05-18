@@ -1070,105 +1070,94 @@ static char *index_delete_document_callback(h2o_req_t *req, void *data) {
     return resp;
 }
 
-static char *index_query_callback(h2o_req_t *req, void *data) {
-    struct index *in = data;
-    // TODO: Apply query limits 
+static char *index_json_query(struct index *in, json_t *jq, int *status) {
     struct query *q = NULL;
     char *response = NULL;
 
-    // Load and parse the query object
-    json_error_t error;
-    json_t *jq = json_loadb(req->entity.base, req->entity.len, 0, &error);
+    q = query_new(in);
+    q->page_num = 1; // By default get the first page
 
-    if (jq && json_is_object(jq)) {
-        q = query_new(in);
-        q->page_num = 1; // By default get the first page
-        
-        // Copy default query settings for the index
-        memcpy(&q->cfg, in->cfg.qcfg, sizeof(struct query_cfg));
+    // Copy default query settings for the index
+    memcpy(&q->cfg, in->cfg.qcfg, sizeof(struct query_cfg));
 
-        // Parse query config overrides and other query info
-        const char *fail = parse_query_settings(jq, &q->cfg, in->mapping, false);
-        if (fail) {
-            response = failure_message(fail);
-            req->res.status = 400;
-            goto send_response;
-        }
-
-        // Parse filters
-        json_t *jf = json_object_get(jq, J_FILTER);
-        // We have a filter, let us parse it
-        if (jf && !json_is_null(jf) && json_object_size(jf)) {
-            q->filter = parse_filter(in, jf);
-            if (!q->filter) {
-                req->res.status = 400;
-                response = failure_message("Query filter json parsing error");
-                goto send_response;
-            }
-            if (q->filter->type == F_ERROR) {
-                req->res.status = 400;
-                response = failure_message(q->filter->error);
-                goto send_response;
-            }
-        }
-        json_t *ja = json_object_get(jq, J_AGGS);
-        // We have an aggregation, let us parse it
-        if (ja && !json_is_null(ja) && json_object_size(ja)) {
-            q->agg = parse_aggs(ja, in);
-            if (q->agg && q->agg->type == AGG_ERROR) {
-                req->res.status = 400;
-                response = failure_message(q->agg->name);
-                goto send_response;
-            }
-        }
-
-        json_t *jp = json_object_get(jq, J_PAGE);
-        if (jp && json_is_integer(jp)) {
-            q->page_num = json_integer_value(jp);
-        }
-        // Make sure page is within our limits
-        if ((q->page_num <= 0) || (q->page_num * q->cfg.hits_per_page > q->cfg.max_hits)) {
-            M_DBG("Query request for page '%d' more than our limit", q->page_num);
-            req->res.status = 400;
-            response = failure_message("Page number requested over limit");
-            goto send_response;
-        }
-
-        json_t *je = json_object_get(jq, J_EXPLAIN);
-        if (je && json_is_boolean(je)) {
-            q->explain = json_is_true(je);
-        }
-
-        // Update rank_rule with rankBy or sortBy
-        int rcount = 0;
-        if (q->cfg.rank_by >= 0) {
-            if (q->cfg.rank_sort) {
-                q->rank_rule[0] = q->cfg.rank_asc ? R_COMP_ASC : R_COMP;
-                q->rank_rule[q->cfg.num_rules + 1] = R_DONE;
-                rcount++;
-            } else {
-                q->rank_rule[q->cfg.num_rules] = q->cfg.rank_asc ? R_COMP_ASC : R_COMP;
-                q->rank_rule[q->cfg.num_rules + 1] = R_DONE;
-            }
-        } else {
-            q->rank_rule[q->cfg.num_rules] = R_DONE;
-        }
-        memcpy(&q->rank_rule[rcount], q->cfg.rank_algo, q->cfg.num_rules * sizeof(SORT_RULE));
-
-        const char *qstr = json_string_value(json_object_get(jq, J_QUERY));
-        if (qstr) {
-            q->text = strdup(qstr);
-            struct analyzer *a = get_default_analyzer();
-            a->analyze_string_for_search(qstr, query_string_word_cb, q);
-        }
-        generate_query_terms(q);
-        dump_query(q);
-
-        response = execute_query(q);
-    } else {
-        req->res.status = 400;
-        return strdup(J_FAILURE);
+    // Parse query config overrides and other query info
+    const char *fail = parse_query_settings(jq, &q->cfg, in->mapping, false);
+    if (fail) {
+        response = failure_message(fail);
+        *status = 400;
+        goto send_response;
     }
+
+    // Parse filters
+    json_t *jf = json_object_get(jq, J_FILTER);
+    // We have a filter, let us parse it
+    if (jf && !json_is_null(jf) && json_object_size(jf)) {
+        q->filter = parse_filter(in, jf);
+        if (!q->filter) {
+            *status = 400;
+            response = failure_message("Query filter json parsing error");
+            goto send_response;
+        }
+        if (q->filter->type == F_ERROR) {
+            *status = 400;
+            response = failure_message(q->filter->error);
+            goto send_response;
+        }
+    }
+    json_t *ja = json_object_get(jq, J_AGGS);
+    // We have an aggregation, let us parse it
+    if (ja && !json_is_null(ja) && json_object_size(ja)) {
+        q->agg = parse_aggs(ja, in);
+        if (q->agg && q->agg->type == AGG_ERROR) {
+            *status = 400;
+            response = failure_message(q->agg->name);
+            goto send_response;
+        }
+    }
+
+    json_t *jp = json_object_get(jq, J_PAGE);
+    if (jp && json_is_integer(jp)) {
+        q->page_num = json_integer_value(jp);
+    }
+    // Make sure page is within our limits
+    if ((q->page_num <= 0) || (q->page_num * q->cfg.hits_per_page > q->cfg.max_hits)) {
+        M_DBG("Query request for page '%d' more than our limit", q->page_num);
+        *status = 400;
+        response = failure_message("Page number requested over limit");
+        goto send_response;
+    }
+
+    json_t *je = json_object_get(jq, J_EXPLAIN);
+    if (je && json_is_boolean(je)) {
+        q->explain = json_is_true(je);
+    }
+
+    // Update rank_rule with rankBy or sortBy
+    int rcount = 0;
+    if (q->cfg.rank_by >= 0) {
+        if (q->cfg.rank_sort) {
+            q->rank_rule[0] = q->cfg.rank_asc ? R_COMP_ASC : R_COMP;
+            q->rank_rule[q->cfg.num_rules + 1] = R_DONE;
+            rcount++;
+        } else {
+            q->rank_rule[q->cfg.num_rules] = q->cfg.rank_asc ? R_COMP_ASC : R_COMP;
+            q->rank_rule[q->cfg.num_rules + 1] = R_DONE;
+        }
+    } else {
+        q->rank_rule[q->cfg.num_rules] = R_DONE;
+    }
+    memcpy(&q->rank_rule[rcount], q->cfg.rank_algo, q->cfg.num_rules * sizeof(SORT_RULE));
+
+    const char *qstr = json_string_value(json_object_get(jq, J_QUERY));
+    if (qstr) {
+        q->text = strdup(qstr);
+        struct analyzer *a = get_default_analyzer();
+        a->analyze_string_for_search(qstr, query_string_word_cb, q);
+    }
+    generate_query_terms(q);
+    dump_query(q);
+
+    response = execute_query(q);
 
 send_response:
     if (q) {
@@ -1181,8 +1170,61 @@ send_response:
         }
         query_free(q);
     }
-    json_decref(jq);
 
+    // Send query response
+    return response;
+}
+
+static char *index_query_callback(h2o_req_t *req, void *data) {
+    struct index *in = data;
+    char *response = NULL;
+
+    // Load and parse the query object
+    json_error_t error;
+    json_t *jq = json_loadb(req->entity.base, req->entity.len, 0, &error);
+
+    if (jq && json_is_object(jq)) {
+        // Check if it is an array of requests
+        struct json_t *jrequests = json_object_get(jq, J_REQUESTS);
+        if (jrequests) {
+            if (json_is_array(jrequests)) {
+                json_t *jrn = json_object();
+                json_t *jrarr = json_array();
+                json_object_set_new(jrn, J_R_RESULTS, jrarr);
+                size_t index;
+                json_t *value;
+                int status = 200;
+                json_array_foreach(jrequests, index, value) {
+                    char *result = index_json_query(in, value, &status);
+                    json_t *jr = json_loads(result, 0, &error);
+                    if (jr) {
+                        json_array_append_new(jrarr, jr);
+                    } else {
+                        json_t *jempty = json_object();
+                        json_object_set_new(jempty, J_R_SUCCESS, json_boolean(0));
+                        json_array_append_new(jrarr, jempty);
+                    }
+                    free(result);
+                }
+                response = json_dumps(jrn, JSON_PRESERVE_ORDER);
+                json_decref(jrn);
+            } else {
+                req->res.status = 400;
+                return failure_message("Requests query needs to be an array of queries");
+            }
+        } else {
+            int status = 200;
+            response = index_json_query(in, jq, &status);
+            req->res.status = status;
+        }
+    } else {
+        req->res.status = 400;
+        return strdup(J_FAILURE);
+    }
+
+    if (jq) {
+        json_decref(jq);
+    }
     // Send query response
     return response;
 }
