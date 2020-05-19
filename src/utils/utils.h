@@ -22,5 +22,6 @@ int get_shard_routing_id(const char *key, int num_shards);
 bool is_json_string_array(const json_t *j);
 float timedifference_msec(struct timeval t0, struct timeval t1);
 char *http_error(h2o_req_t *req, HTTP_CODE code);
+char *failure_message(const char *msg);
 
 #endif

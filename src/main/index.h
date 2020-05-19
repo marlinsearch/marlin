@@ -88,5 +88,6 @@ void index_delete(struct index *in);
 struct schema *get_field_schema(struct index *in, const char *key);
 void index_apply_key(struct index *in, struct key *k, KEY_ACCESS access);
 void index_delete_key(struct index *in, struct key *k);
+char *index_json_query(struct index *in, json_t *jq, int *status);
 
 #endif

@@ -133,6 +133,88 @@ static char *list_indexes_handler(h2o_req_t *req, void *data) {
     return index_list_to_json(a);
 }
 
+struct index *get_index_by_name(struct app *a, const char *name) {
+    for (int i = 0; i < kv_size(a->indexes); i++) {
+        struct index *in = kv_A(a->indexes, i);
+        if (strcmp(in->name, name) == 0) {
+            return in;
+        }
+    }
+    return NULL;
+}
+
+static char *app_index_query(struct app *a, json_t *jq, int *status) {
+    json_t *jin = json_object_get(jq, J_INDEXNAME);
+    if (!jin || !json_is_string(jin)) {
+        *status = 400;
+        return failure_message("indexName field is required for app queries");
+    }
+    const char *in_name = json_string_value(jin);
+    struct index *in = get_index_by_name(a, in_name);
+    if (!in) {
+        *status = 400;
+        return failure_message("Invalid indexName specified");
+    }
+    return index_json_query(in, jq, status);
+}
+
+static char *query_app_indexes_handler(h2o_req_t *req, void *data) {
+    struct app *a = (struct app *) data;
+    char *response = NULL;
+
+    // Load and parse the query object
+    json_error_t error;
+    json_t *jq = json_loadb(req->entity.base, req->entity.len, 0, &error);
+
+    if (jq && json_is_object(jq)) {
+        // Check if it is an array of requests
+        struct json_t *jrequests = json_object_get(jq, J_REQUESTS);
+        if (jrequests) {
+            if (json_is_array(jrequests)) {
+                json_t *jrn = json_object();
+                json_t *jrarr = json_array();
+                json_object_set_new(jrn, J_R_RESULTS, jrarr);
+                size_t index;
+                json_t *value;
+                int status = 200;
+                json_array_foreach(jrequests, index, value) {
+                    char *result = app_index_query(a, value, &status);
+                    json_t *jr = json_loads(result, 0, &error);
+                    if (jr) {
+                        json_array_append_new(jrarr, jr);
+                    } else {
+                        json_t *jempty = json_object();
+                        json_object_set_new(jempty, J_R_SUCCESS, json_boolean(0));
+                        json_array_append_new(jrarr, jempty);
+                    }
+                    free(result);
+                }
+                response = json_dumps(jrn, JSON_PRESERVE_ORDER);
+                json_decref(jrn);
+            } else {
+                req->res.status = 400;
+                response = failure_message("Requests query needs to be an array of queries");
+                goto send_response;
+            }
+        } else {
+            int status = 200;
+            response = app_index_query(a, jq, &status);
+            req->res.status = status;
+        }
+    } else {
+        req->res.status = 400;
+        return strdup(J_FAILURE);
+    }
+
+send_response:
+    if (jq) {
+        json_decref(jq);
+    }
+    // Send query response
+    return response;
+
+}
+
 /* Creates an index after validations.  Returns NULL on failure to create */
 // TODO: proper error handling, let the user know what went wrong while creating index
 static struct index *create_index_from_json(struct app *a, struct json_t *j) {
@@ -306,6 +388,8 @@ static void app_apply_key(struct app *a, struct key *k) {
             URL_INDEXES, url_cbdata_new((k->access & KA_ADD_INDEX)?create_index_handler:api_forbidden, a));
     register_api_callback(a->appid, k->apikey, "GET", 
             URL_INDEXES, url_cbdata_new((k->access & KA_LIST_INDEX)?list_indexes_handler:api_forbidden, a));
+    register_api_callback(a->appid, k->apikey, "POST", 
+            URL_QUERY, url_cbdata_new((k->access & KA_QUERY)?query_app_indexes_handler:api_forbidden, a));
     // Else apply to only those that match
     for (int i=0; i<kv_size(a->indexes); i++) {
         struct index *in= kv_A(a->indexes, i);
@@ -501,6 +585,7 @@ static void app_delete_key(struct app *a, struct key *k) {
     // Deregister app related api callbacks
     deregister_api_callback(a->appid, k->apikey, "POST", URL_INDEXES);
     deregister_api_callback(a->appid, k->apikey, "GET", URL_INDEXES);
+    deregister_api_callback(a->appid, k->apikey, "POST", URL_QUERY);
     // Else apply to only those that match
     for (int i=0; i<kv_size(a->indexes); i++) {
         struct index *in = kv_A(a->indexes, i);
@@ -593,6 +678,8 @@ struct app *app_new(const char *name, const char *appid, const char *apikey) {
     register_api_callback(a->appid, a->apikey, "GET", 
                           URL_INDEXES, url_cbdata_new(list_indexes_handler, a));
     register_api_callback(a->appid, a->apikey, "POST", 
+                          URL_QUERY, url_cbdata_new(query_app_indexes_handler, a));
+    register_api_callback(a->appid, a->apikey, "POST", 
                           URL_KEYS, url_cbdata_new(create_key, a));
     register_api_callback(a->appid, a->apikey, "GET", 
                           URL_KEYS, url_cbdata_new(list_keys, a));
@@ -612,6 +699,7 @@ void app_free(struct app *a) {
     // Deregister app api handlers
     deregister_api_callback(a->appid, a->apikey, "POST", URL_INDEXES);
     deregister_api_callback(a->appid, a->apikey, "GET", URL_INDEXES);
+    deregister_api_callback(a->appid, a->apikey, "POST", URL_QUERY);
 
     // free the indices
     for (int i=0; i<kv_size(a->indexes); i++) {

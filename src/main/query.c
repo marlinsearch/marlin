@@ -417,7 +417,7 @@ static json_t *form_result(struct query *q, struct squery *sq) {
     json_object_set_new(j, J_R_HITS, jhits);
     json_object_set_new(j, J_R_QUERYTEXT, json_string(q->text));
     json_object_set_new(j, J_S_FULLSCAN, json_boolean(fullScan));
-    json_object_set_new(j, J_R_INDEXNAME, json_string(q->in->name));
+    json_object_set_new(j, J_INDEXNAME, json_string(q->in->name));
     return j;
 }
 

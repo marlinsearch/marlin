@@ -122,6 +122,7 @@
 #define J_PAGE          "page"
 #define J_EXPLAIN       "explain"
 #define J_REQUESTS      "requests"
+#define J_INDEXNAME     "indexName"
 
 // Query response attributes
 #define J_R_TOTALHITS     "totalHits"
@@ -134,7 +135,6 @@
 #define J_R_KEY           "key"
 #define J_R_FACETS        "facets"
 #define J_R_QUERYTEXT     "queryText"
-#define J_R_INDEXNAME     "indexName"
 #define J_R_RESULTS       "results"
 #define J_R_SUCCESS       "success"
 

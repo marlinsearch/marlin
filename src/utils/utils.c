@@ -94,3 +94,10 @@ char *http_error(h2o_req_t *req, HTTP_CODE code) {
     }
     return strdup(J_FAILURE);
 }
+
+char *failure_message(const char *msg) {
+    char *tmp = malloc(PATH_MAX);
+    snprintf(tmp, PATH_MAX, "{\"success\": false, \"message\": \"%s\"}", msg);
+    return tmp;
+}
+

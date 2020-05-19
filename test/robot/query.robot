@@ -60,6 +60,30 @@ Test multiple queries
     String      $.results[1].indexName         testindex
     String      $.results[0].indexName         testindex
 
+Test app query
+    Set Headers  ${appheader}
+    POST         /1/query  {"q": "", "indexName": "testindex"}
+    Integer     response status     200
+    Integer     $.totalHits         6000
+    String      $.indexName         testindex
+
+Test app multiple queries
+    Set Headers  ${appheader}
+    POST         /1/query  {"requests" : [{"q": "", "indexName": "testindex"}, {"q": "blahblahblahblahblahblahblahblah", "indexName": "testindex"}]}
+    Integer     response status     200
+    Integer     $.results[0].totalHits         6000
+    Integer     $.results[1].totalHits         0
+    String      $.results[1].indexName         testindex
+    String      $.results[0].indexName         testindex
+
+
+Test app query failures
+    Set Headers  ${appheader}
+    POST         /1/query  {"q": "", "indexName": "testindexblah"}
+    Integer     response status     400
+    POST         /1/query  {"q": "", "iexName": "testindexblah"}
+    Integer     response status     400
+ 
 Delete the index
     Set Headers  ${appheader}
     DELETE      /1/indexes/testindex

@@ -956,13 +956,6 @@ send_response:
     return resp;
 }
 
-static char *failure_message(const char *msg) {
-    char *tmp = malloc(PATH_MAX);
-    snprintf(tmp, PATH_MAX, "{\"success\": false, \"message\": \"%s\"}", msg);
-    return tmp;
-}
-
-
 /* Performs the job type replace / update on a document.  A previous document of the same
  * id may or may not be required based on type */
 static char *index_document_job(h2o_req_t *req, void *data, JOB_TYPE type, bool required) {
@@ -1070,7 +1063,7 @@ static char *index_delete_document_callback(h2o_req_t *req, void *data) {
     return resp;
 }
 
-static char *index_json_query(struct index *in, json_t *jq, int *status) {
+char *index_json_query(struct index *in, json_t *jq, int *status) {
     struct query *q = NULL;
     char *response = NULL;
 
