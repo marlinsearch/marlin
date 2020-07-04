@@ -1,6 +1,6 @@
 /* mdb_load.c - memory-mapped database load tool */
 /*
- * Copyright 2011-2018 Howard Chu, Symas Corp.
+ * Copyright 2011-2020 Howard Chu, Symas Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -238,7 +238,7 @@ badend:
 		while (c2 < end) {
 			if (*c2 == '\\') {
 				if (c2[1] == '\\') {
-					c1++; c2 += 2;
+					*c1++ = *c2;
 				} else {
 					if (c2+3 > end || !isxdigit(c2[1]) || !isxdigit(c2[2])) {
 						Eof = 1;
@@ -246,8 +246,8 @@ badend:
 						return EOF;
 					}
 					*c1++ = unhex(++c2);
-					c2 += 2;
 				}
+				c2 += 2;
 			} else {
 				/* copies are redundant when no escapes were used */
 				*c1++ = *c2++;

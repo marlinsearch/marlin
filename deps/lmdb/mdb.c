@@ -5,7 +5,7 @@
  *	BerkeleyDB API, but much simplified.
  */
 /*
- * Copyright 2011-2018 Howard Chu, Symas Corp.
+ * Copyright 2011-2020 Howard Chu, Symas Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -3027,9 +3027,9 @@ mdb_txn_end(MDB_txn *txn, unsigned mode)
 			txn->mt_parent->mt_flags &= ~MDB_TXN_HAS_CHILD;
 			env->me_pgstate = ((MDB_ntxn *)txn)->mnt_pgstate;
 			mdb_midl_free(txn->mt_free_pgs);
-			mdb_midl_free(txn->mt_spill_pgs);
 			free(txn->mt_u.dirty_list);
 		}
+		mdb_midl_free(txn->mt_spill_pgs);
 
 		mdb_midl_free(pghead);
 	}
@@ -3109,9 +3109,9 @@ mdb_freelist_save(MDB_txn *txn)
 			} else {
 				x = mdb_mid2l_search(dl, mp->mp_pgno);
 				mdb_tassert(txn, dl[x].mid == mp->mp_pgno);
+				mdb_dpage_free(env, mp);
 			}
 			dl[x].mptr = NULL;
-			mdb_dpage_free(env, mp);
 		}
 		{
 			/* squash freed slots out of the dirty list */
@@ -3991,9 +3991,9 @@ mdb_env_map(MDB_env *env, void *addr)
 		 * and won't map more than the file size.
 		 * Just set the maxsize right now.
 		 */
-		if (SetFilePointer(env->me_fd, sizelo, &sizehi, 0) != (DWORD)sizelo
+		if (!(flags & MDB_WRITEMAP) && (SetFilePointer(env->me_fd, sizelo, &sizehi, 0) != (DWORD)sizelo
 			|| !SetEndOfFile(env->me_fd)
-			|| SetFilePointer(env->me_fd, 0, NULL, 0) != 0)
+			|| SetFilePointer(env->me_fd, 0, NULL, 0) != 0))
 			return ErrCode();
 	}
 
@@ -4010,13 +4010,18 @@ mdb_env_map(MDB_env *env, void *addr)
 	if (rc)
 		return rc;
 #else
+	int mmap_flags = MAP_SHARED;
 	int prot = PROT_READ;
+#ifdef MAP_NOSYNC	/* Used on FreeBSD */
+	if (flags & MDB_NOSYNC)
+		mmap_flags |= MAP_NOSYNC;
+#endif
 	if (flags & MDB_WRITEMAP) {
 		prot |= PROT_WRITE;
 		if (ftruncate(env->me_fd, env->me_mapsize) < 0)
 			return ErrCode();
 	}
-	env->me_map = mmap(addr, env->me_mapsize, prot, MAP_SHARED,
+	env->me_map = mmap(addr, env->me_mapsize, prot, mmap_flags,
 		env->me_fd, 0);
 	if (env->me_map == MAP_FAILED) {
 		env->me_map = NULL;
@@ -8749,7 +8754,7 @@ mdb_page_split(MDB_cursor *mc, MDB_val *newkey, MDB_val *newdata, pgno_t newpgno
 			 * the split so the new page is emptier than the old page.
 			 * This yields better packing during sequential inserts.
 			 */
-			if (nkeys < 20 || nsize > pmax/16 || newindx >= nkeys) {
+			if (nkeys < 32 || nsize > pmax/16 || newindx >= nkeys) {
 				/* Find split point */
 				psize = 0;
 				if (newindx <= split_indx || newindx >= nkeys) {
