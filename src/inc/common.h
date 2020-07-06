@@ -10,6 +10,7 @@
 #include "khash.h"
 
 //#define VALGRIND_TEST 1
+#define DUMP_MDB_STATS 1
 
 #if VALGRIND_TEST
 #define MDB_ENV_SIZE        655360000

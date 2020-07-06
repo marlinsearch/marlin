@@ -24,6 +24,8 @@ bool mbmap_save(struct mbmap *b, MDB_txn *txn, MDB_dbi dbi);
 struct bmap *mbmap_load_bmap(MDB_txn *txn, MDB_dbi dbi, uint64_t id);
 uint32_t mbmap_get_cardinality(struct mbmap *b);
 void mbmap_free(struct mbmap *b);
+void mbmap_stats_dump();
+void mbmap_stats_reset();
 
 #endif
 

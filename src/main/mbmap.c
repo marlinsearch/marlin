@@ -1,5 +1,35 @@
 #include "mbmap.h"
 #include "mlog.h"
+#include "common.h"
+#include "platform.h"
+
+#ifdef DUMP_MDB_STATS
+static int whead = 0;
+static int wdata = 0;
+static int shead = 0;
+static int sdata = 0;
+static int load = 0;
+static int save = 0;
+static int wsize = 0;
+static int rsize = 0;
+static int count = 0;
+
+void mbmap_stats_reset() {
+    load = 0;
+    save = 0;
+    whead = 0;
+    wdata = 0;
+    shead = 0;
+    sdata = 0;
+    wsize = 0;
+    rsize = 0;
+}
+
+void mbmap_stats_dump() {
+    printf("ws %10d rs %10d l %10d s %10d wh %d wd %d sh %d sd %d\n", wsize, rsize, load, save, whead, wdata, shead, sdata);
+    count++;
+}
+#endif
 
 static inline uint16_t highbits(uint32_t i) {
     return i>>16;
@@ -42,6 +72,9 @@ void mbmap_add(struct mbmap *b, uint32_t item, MDB_txn *txn, MDB_dbi dbi) {
             key.mv_size = sizeof(bid);
             key.mv_data = &bid;
             if ((rc = mdb_get(txn, dbi, &key, &data)) == 0) {
+#ifdef DUMP_MDB_STATS
+                rsize += data.mv_size;
+#endif
                 b->c[pos].cont.buffer = malloc(data.mv_size);
                 memcpy(b->c[pos].cont.buffer, data.mv_data, data.mv_size);
             } else {
@@ -127,6 +160,10 @@ void mbmap_load(struct mbmap *b, MDB_txn *txn, MDB_dbi dbi) {
         b->num_c = *buf;
         b->c = calloc(b->num_c, sizeof(struct mcont));
         buf++;
+#ifdef DUMP_MDB_STATS
+        rsize += data.mv_size;
+        load++;
+#endif
         // TODO: data.mv_size is correct !
         for (int i=0; i<b->num_c; i++) {
             b->c[i].id = *buf;
@@ -168,10 +205,17 @@ bool mbmap_save(struct mbmap *b, MDB_txn *txn, MDB_dbi dbi) {
         }
         return false;
     }
+#ifdef DUMP_MDB_STATS
+    save++;
+#endif
     // Write header if required
-    if (b->write_header) {
+    if (UNLIKELY(b->write_header)) {
         id = b->id;
         data.mv_size = sizeof(uint16_t) * (b->num_c + 1);
+#ifdef DUMP_MDB_STATS
+        wsize += data.mv_size;
+        whead++;
+#endif
         int rc = mdb_put(txn, dbi, &key, &data, MDB_RESERVE);
         if (rc != 0) {
             M_ERR("MDB reserve failure mbmap save %s", mdb_strerror(rc));
@@ -184,21 +228,35 @@ bool mbmap_save(struct mbmap *b, MDB_txn *txn, MDB_dbi dbi) {
                 buf++;
             }
         }
+    } 
+#ifdef DUMP_MDB_STATS
+    else {
+        shead++;
     }
+#endif
     for (int i=0; i<b->num_c; i++) {
         // If a buffer is valid, dump it
-        if (b->c[i].cont.buffer) {
+        if (UNLIKELY(b->c[i].cont.buffer)) {
             // 0 is taken for header, rest are store with id + 1
             id = b->id + b->c[i].id + 1;
             int len = (cont_cardinality(&b->c[i].cont) > CUTOFF)?CUTOFF:b->c[i].cont.buffer[1];
             len += 2; // id + card
             data.mv_size = sizeof(uint16_t) * len;
+#ifdef DUMP_MDB_STATS
+            wsize += data.mv_size;
+            wdata++;
+#endif
             data.mv_data = b->c[i].cont.buffer;
             int rc = mdb_put(txn, dbi, &key, &data, 0);
             if (rc != 0) {
                 M_ERR("MDB failure mbmap save %s", mdb_strerror(rc));
             }
+        } 
+#ifdef DUMP_MDB_STATS
+        else {
+            sdata++;
         }
+#endif
     }
     return true;
 }

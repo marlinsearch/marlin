@@ -126,6 +126,8 @@ static void si_write_start(struct sindex *si) {
     dtrie_write_start(si->trie);
     // Begin the write transaction
     mdb_txn_begin(si->env, NULL, 0, &si->txn);
+    mdb_txn_begin(si->env, NULL, MDB_RDONLY, &si->read_txn);
+    mdb_txn_reset(si->read_txn);
 }
 
 /* Stores a id to bitmap mapping in lmdb.  It deletes a mbmap if required */
@@ -242,6 +244,7 @@ static void si_write_end(struct sindex *si) {
     dtrie_write_end(si->trie, si->boolid2bmap_dbi, si->txn);
     // Commit write transaction
     mdb_txn_commit(si->txn);
+    mdb_txn_abort(si->read_txn);
 
     // Free common document data
     free(si->wc->od.num_data);
@@ -576,7 +579,7 @@ static inline void deindex_number(struct sindex *si, int priority, double d) {
 }
 
 static inline void index_boolean(struct sindex *si, int priority, bool b) {
-    wid2bmap_add(si->boolid2bmap_dbi, si->wc->kh_boolid2bmap, si->txn, 
+    wid2bmap_add(si->boolid2bmap_dbi, si->wc->kh_boolid2bmap, si->read_txn, 
                          b, si->wc->od.docid, priority);
 }
 
@@ -624,7 +627,7 @@ static void index_string_facet(struct sindex *si, const char *str, int priority)
     // Store it in per obj data
     kv_push(uint32_t, od->facet_data[priority], facet_id);
     // Update facetid -> bitmap of all documents with this facet id
-    wid2bmap_add(si->facetid2bmap_dbi, si->wc->kh_facetid2bmap, si->txn, 
+    wid2bmap_add(si->facetid2bmap_dbi, si->wc->kh_facetid2bmap, si->read_txn, 
                          facet_id, od->docid, priority);
 }
 
@@ -667,9 +670,9 @@ static void string_new_word_pos(word_pos_t *wp, void *data) {
         wid = dtrie_insert(si->trie, wp->word.chars, wp->word.length, od->twid);
         // Store top-level word id to word id mapping
         for (int i = 0; i < limit; i++) {
-            wid2bmap_add(si->twid2widbmap_dbi, si->wc->kh_twid2widbmap, si->txn, 
+            wid2bmap_add(si->twid2widbmap_dbi, si->wc->kh_twid2widbmap, si->read_txn, 
                          od->twid[i], wid, 0);
-            wid2bmap_add(si->twid2widbmap_dbi, si->wc->kh_twid2widbmap, si->txn, 
+            wid2bmap_add(si->twid2widbmap_dbi, si->wc->kh_twid2widbmap, si->read_txn, 
                          od->twid[i], wid, p);
         }
 #ifdef TRACK_WIDS
@@ -685,16 +688,16 @@ static void string_new_word_pos(word_pos_t *wp, void *data) {
 
     // Set the top-level wid to obj id mapping
     for (int i = 0; i < limit; i++) {
-        wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2bmap, si->txn, 
+        wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2bmap, si->read_txn, 
                      od->twid[i], od->docid, 0);
-        wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2bmap, si->txn, 
+        wid2bmap_add(si->twid2bmap_dbi, si->wc->kh_twid2bmap, si->read_txn, 
                      od->twid[i], od->docid, p);
     }
 
     // Set the wid to obj id mapping
-    wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
+    wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->read_txn, 
             wid, od->docid, 0);
-    wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->txn, 
+    wid2bmap_add(si->wid2bmap_dbi, si->wc->kh_wid2bmap, si->read_txn, 
             wid, od->docid, p);
 
     // Store wid positions
@@ -998,6 +1001,7 @@ static void parse_deindex_document(struct sindex *si, struct schema *s, const js
 /* Entry point to parse and index a document, this assumes that 
  * the write cache is ready */
 static void si_add_document(struct sindex *si, json_t *j) {
+    mdb_txn_renew(si->read_txn);
     // Get the docid from the document, this was previously set when
     // adding the document to sdata
     si->wc->od.docid = json_number_value(json_object_get(j, J_DOCID));
@@ -1009,6 +1013,7 @@ static void si_add_document(struct sindex *si, json_t *j) {
 
     // Store the parsed document and cleanup
     sindex_store_docdata(si);
+    mdb_txn_reset(si->read_txn);
 }
 
 static void si_remove_docdata(struct sindex *si) {
@@ -1222,21 +1227,21 @@ struct sindex *sindex_new(struct shard *shard) {
         M_ERR("Error setting mapsize on [%s/%s] %d", shard->index->app->name, shard->index->name, rc);
     }
     mdb_env_set_maxdbs(si->env, 64);
-    mdb_env_open(si->env, path, MDB_NORDAHEAD|MDB_NOSYNC, 0664);
+    mdb_env_open(si->env, path, MDB_NORDAHEAD|MDB_NOSYNC|MDB_NOMETASYNC, 0664);
     mdb_txn_begin(si->env, NULL, 0, &si->txn);
 
     // Open all necessary dbis here
-    mdb_dbi_open(si->txn, DBI_FACETID2STR, MDB_CREATE|MDB_INTEGERKEY, &si->facetid2str_dbi);
-    mdb_dbi_open(si->txn, DBI_FACETID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->facetid2bmap_dbi);
-    mdb_dbi_open(si->txn, DBI_BOOLID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->boolid2bmap_dbi);
-    mdb_dbi_open(si->txn, DBI_TWID2WIDBMAP, MDB_CREATE|MDB_INTEGERKEY, &si->twid2widbmap_dbi);
-    mdb_dbi_open(si->txn, DBI_TWID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->twid2bmap_dbi);
-    mdb_dbi_open(si->txn, DBI_WID2BMAP, MDB_CREATE|MDB_INTEGERKEY, &si->wid2bmap_dbi);
-    mdb_dbi_open(si->txn, DBI_DOCID2DATA, MDB_CREATE|MDB_INTEGERKEY, &si->docid2data_dbi);
-    mdb_dbi_open(si->txn, DBI_PHRASE, MDB_CREATE|MDB_INTEGERKEY, &si->phrase_dbi);
-    mdb_dbi_open(si->txn, DBI_IDNUM2DBL, MDB_CREATE|MDB_INTEGERKEY, &si->idnum2dbl_dbi);
+    mdb_dbi_open(si->txn, DBI_FACETID2STR, MDB_CREATE, &si->facetid2str_dbi);
+    mdb_dbi_open(si->txn, DBI_FACETID2BMAP, MDB_CREATE, &si->facetid2bmap_dbi);
+    mdb_dbi_open(si->txn, DBI_BOOLID2BMAP, MDB_CREATE, &si->boolid2bmap_dbi);
+    mdb_dbi_open(si->txn, DBI_TWID2WIDBMAP, MDB_CREATE, &si->twid2widbmap_dbi);
+    mdb_dbi_open(si->txn, DBI_TWID2BMAP, MDB_CREATE, &si->twid2bmap_dbi);
+    mdb_dbi_open(si->txn, DBI_WID2BMAP, MDB_CREATE, &si->wid2bmap_dbi);
+    mdb_dbi_open(si->txn, DBI_DOCID2DATA, MDB_CREATE, &si->docid2data_dbi);
+    mdb_dbi_open(si->txn, DBI_PHRASE, MDB_CREATE, &si->phrase_dbi);
+    mdb_dbi_open(si->txn, DBI_IDNUM2DBL, MDB_CREATE, &si->idnum2dbl_dbi);
 #ifdef TRACK_WIDS
-    mdb_dbi_open(si->txn, "wid2chrdbi", MDB_CREATE|MDB_INTEGERKEY, &si->wid2chr_dbi);
+    mdb_dbi_open(si->txn, "wid2chrdbi", MDB_CREATE, &si->wid2chr_dbi);
 #endif
 
     strcat(path, "/");

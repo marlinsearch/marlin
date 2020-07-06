@@ -63,6 +63,7 @@ struct sindex {
     // LMDB
     MDB_env *env;
     MDB_txn *txn;
+    MDB_txn *read_txn;
 
     MDB_dbi facetid2str_dbi;    // Facet_id to facet string mapping
     MDB_dbi facetid2bmap_dbi;   // Facet id to bitmap of documents containing that id

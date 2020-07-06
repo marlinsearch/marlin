@@ -34,12 +34,15 @@ struct add_obj_tdata {
 void worker_add_process(void *w) {
     struct add_obj_tdata *add = w;
     shard_add_documents(kv_A(add->index->shards, add->shard_idx), add->sh_j);
-    M_INFO("Shard worker %d len %lu", add->shard_idx, json_array_size(add->sh_j));
+    M_DBG("Shard worker %d len %lu", add->shard_idx, json_array_size(add->sh_j));
     json_decref(add->sh_j);
     worker_done(add->tdata);
 }
 
 void index_worker_add_documents(struct index *in, json_t **sh_j) {
+#ifdef DUMP_MDB_STATS
+    mbmap_stats_reset();
+#endif
     struct worker worker;
     worker_init(&worker, in->num_shards);
     struct add_obj_tdata *sh_add = malloc(in->num_shards * sizeof(struct add_obj_tdata));
@@ -61,6 +64,9 @@ void index_worker_add_documents(struct index *in, json_t **sh_j) {
     wait_for_workers(&worker);
     worker_destroy(&worker);
     free(sh_add);
+#ifdef DUMP_MDB_STATS
+    mbmap_stats_dump();
+#endif
 }
 
 static void index_apply_config(struct index *in) {
@@ -151,7 +157,7 @@ static void index_add_documents(struct index *in, json_t *j) {
         for (int i=0; i < in->num_shards; i++) {
             // send to shard
             shard_add_documents(kv_A(in->shards, i), sh_j[i]);
-            printf("Shard %d len %lu\n", i, json_array_size(sh_j[i]));
+            M_DBG("Shard %d len %lu\n", i, json_array_size(sh_j[i]));
             json_decref(sh_j[i]);
         }
 #else
