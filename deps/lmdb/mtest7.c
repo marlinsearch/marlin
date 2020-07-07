@@ -76,7 +76,7 @@ int main(int argc,char * argv[])
 		key.mv_size = sizeof(uint64_t);
 
 	    gettimeofday(&tstart, NULL);
-        int maxcount = 1000;
+        int maxcount = 500;
 	    for (i=1;i<maxcount;i++) {	
 	        gettimeofday(&start, NULL);
 		    E(mdb_txn_begin(env, NULL, 0, &txn));
@@ -88,7 +88,7 @@ int main(int argc,char * argv[])
                 data.mv_data = malloc(data.mv_size);
                 size += data.mv_size;
                 tsize += (data.mv_size / 1000);
-                //rc = mdb_put(txn, dbi[keyd%10], &key, &data, 0);
+                //rc = mdb_put(txn, dbi[0], &key, &data, 0);
                 rc = mdb_put(txn, dbi[keyd%10], &key, &data, 0);
                 free(data.mv_data);
             }

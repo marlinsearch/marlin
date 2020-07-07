@@ -164,22 +164,10 @@ void mbmap_load(struct mbmap *b, MDB_txn *txn, MDB_dbi dbi) {
         rsize += data.mv_size;
         load++;
 #endif
-        // TODO: data.mv_size is correct !
         for (int i=0; i<b->num_c; i++) {
             b->c[i].id = *buf;
             buf++;
-            // TODO: TEMP lazy loaded on top
-            /*
-            uint64_t bid = b->id + (b->c[i].id+1);
-            key.mv_data = &bid;
-            MDB_val data2;
-            if (mdb_get(txn, dbi, &key, &data2) == 0) {
-                b->c[i].cont.buffer = malloc(data2.mv_size);
-                memcpy(b->c[i].cont.buffer, data2.mv_data, data2.mv_size);
-            } else {
-                M_ERR("Could not load buffer data");
-            }*/
-        }
+       }
     }
 }
 
